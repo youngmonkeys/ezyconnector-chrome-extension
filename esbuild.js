@@ -1,5 +1,6 @@
 import esbuild from 'esbuild';
 import { cp, mkdir } from 'node:fs/promises';
+import { watch as watchFile } from 'node:fs';
 
 const watch = process.argv.includes('--watch');
 
@@ -32,6 +33,13 @@ await copyStatic();
 
 if (watch) {
   await ctx.watch();
+  for (const [src] of staticFiles) {
+    watchFile(src, () => {
+      copyStatic()
+        .then(() => console.log(`Copied ${src}`))
+        .catch((err) => console.error(err));
+    });
+  }
   console.log('Watching for changes...');
 } else {
   await ctx.rebuild();

@@ -14,15 +14,20 @@
       </div>
       <form id="config-form">
         <label>
-          WebSocket URL
-          <input id="ws-url" type="text" placeholder="wss://example.com/ws" required />
+          Admin URL
+          <input id="admin-url" type="text" placeholder="https://admin.example.com" value="http://localhost:9090" required />
         </label>
         <label>
-          Token
-          <input id="token" type="password" placeholder="Access token" />
+          Tài khoản
+          <input id="username" type="text" placeholder="Username" required autocomplete="username" />
         </label>
+        <label>
+          Mật khẩu
+          <input id="password" type="password" placeholder="Password" required autocomplete="current-password" />
+        </label>
+        <p id="error-message" class="error" hidden></p>
         <div class="actions">
-          <button type="submit">Lưu &amp; Kết nối</button>
+          <button type="submit" id="login-btn">Đăng nhập &amp; Kết nối</button>
           <button type="button" id="disconnect-btn">Ngắt kết nối</button>
         </div>
       </form>

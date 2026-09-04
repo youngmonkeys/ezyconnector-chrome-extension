@@ -1,16 +1,20 @@
-interface ConnectionConfig {
-  wsUrl: string;
-  token: string;
+interface AdminCredentials {
+  adminUrl: string;
+  username: string;
 }
 
-const STORAGE_KEY = 'ezyConnectorConfig';
+const CREDENTIALS_KEY = 'ezyConnectorCredentials';
+const CONNECTION_KEY = 'ezyConnectorConnection';
 
 const form = document.getElementById('config-form') as HTMLFormElement;
-const wsUrlInput = document.getElementById('ws-url') as HTMLInputElement;
-const tokenInput = document.getElementById('token') as HTMLInputElement;
+const adminUrlInput = document.getElementById('admin-url') as HTMLInputElement;
+const usernameInput = document.getElementById('username') as HTMLInputElement;
+const passwordInput = document.getElementById('password') as HTMLInputElement;
+const loginBtn = document.getElementById('login-btn') as HTMLButtonElement;
 const disconnectBtn = document.getElementById('disconnect-btn') as HTMLButtonElement;
 const statusDot = document.getElementById('status-dot') as HTMLElement;
 const statusText = document.getElementById('status-text') as HTMLElement;
+const errorMessage = document.getElementById('error-message') as HTMLElement;
 
 const STATUS_LABELS: Record<string, string> = {
   connected: 'Đã kết nối',
@@ -19,12 +23,12 @@ const STATUS_LABELS: Record<string, string> = {
   error: 'Lỗi kết nối',
 };
 
-async function loadConfig(): Promise<void> {
-  const result = await chrome.storage.local.get(STORAGE_KEY);
-  const config = result[STORAGE_KEY] as ConnectionConfig | undefined;
-  if (config) {
-    wsUrlInput.value = config.wsUrl ?? '';
-    tokenInput.value = config.token ?? '';
+async function loadCredentials(): Promise<void> {
+  const result = await chrome.storage.local.get(CREDENTIALS_KEY);
+  const credentials = result[CREDENTIALS_KEY] as AdminCredentials | undefined;
+  if (credentials) {
+    adminUrlInput.value = credentials.adminUrl ?? '';
+    usernameInput.value = credentials.username ?? '';
   }
 }
 
@@ -41,19 +45,45 @@ function refreshStatus(): void {
   });
 }
 
+function showError(message: string): void {
+  errorMessage.textContent = message;
+  errorMessage.hidden = false;
+}
+
+function clearError(): void {
+  errorMessage.hidden = true;
+  errorMessage.textContent = '';
+}
+
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
-  const config: ConnectionConfig = {
-    wsUrl: wsUrlInput.value.trim(),
-    token: tokenInput.value.trim(),
-  };
-  await chrome.storage.local.set({ [STORAGE_KEY]: config });
+  clearError();
+  loginBtn.disabled = true;
+  loginBtn.textContent = 'Đang đăng nhập...';
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'login',
+      adminUrl: adminUrlInput.value.trim(),
+      username: usernameInput.value.trim(),
+      password: passwordInput.value,
+    });
+    if (response?.ok) {
+      passwordInput.value = '';
+    } else {
+      showError(response?.error ?? 'Đăng nhập thất bại');
+    }
+  } catch (error) {
+    showError(error instanceof Error ? error.message : String(error));
+  } finally {
+    loginBtn.disabled = false;
+    loginBtn.textContent = 'Đăng nhập & Kết nối';
+  }
 });
 
 disconnectBtn.addEventListener('click', async () => {
-  await chrome.storage.local.remove(STORAGE_KEY);
-  wsUrlInput.value = '';
-  tokenInput.value = '';
+  clearError();
+  await chrome.runtime.sendMessage({ type: 'disconnect' });
+  passwordInput.value = '';
 });
 
 chrome.runtime.onMessage.addListener((message) => {
@@ -62,5 +92,11 @@ chrome.runtime.onMessage.addListener((message) => {
   }
 });
 
-loadConfig();
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && CONNECTION_KEY in changes && !changes[CONNECTION_KEY].newValue) {
+    renderStatus('disconnected');
+  }
+});
+
+loadCredentials();
 refreshStatus();

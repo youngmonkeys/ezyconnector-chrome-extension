@@ -11,7 +11,13 @@ export interface EzyResponseMessage {
   error?: string;
 }
 
+export interface AdminCredentials {
+  adminUrl: string;
+  username: string;
+}
+
 export interface ConnectionConfig {
+  adminUrl: string;
   wsUrl: string;
   token: string;
 }
