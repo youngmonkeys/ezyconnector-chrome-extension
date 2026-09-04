@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <title>EzyConnector</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <h1>EzyConnector</h1>
+      <div class="status">
+        <span id="status-dot" class="dot"></span>
+        <span id="status-text">Đang kiểm tra...</span>
+      </div>
+      <form id="config-form">
+        <label>
+          WebSocket URL
+          <input id="ws-url" type="text" placeholder="wss://example.com/ws" required />
+        </label>
+        <label>
+          Token
+          <input id="token" type="password" placeholder="Access token" />
+        </label>
+        <div class="actions">
+          <button type="submit">Lưu &amp; Kết nối</button>
+          <button type="button" id="disconnect-btn">Ngắt kết nối</button>
+        </div>
+      </form>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
