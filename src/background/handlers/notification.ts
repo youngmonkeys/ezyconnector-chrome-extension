@@ -3,6 +3,7 @@ export interface NotificationPayload {
   data?: {
     zaloOaUserId?: string;
     message?: string;
+    imageUrls?: string[];
     [key: string]: unknown;
   };
 }
@@ -16,6 +17,15 @@ const ZALO_OA_SEARCH_RESULT_WAIT_MS = 3000;
 const ZALO_OA_MESSAGE_INPUT_SELECTOR =
   '.content_mess_input textarea[placeholder="Nhập nội dung tin nhắn..."]';
 const ZALO_OA_MESSAGE_INPUT_WAIT_MS = 5000;
+const ZALO_OA_IMAGE_BUTTON_SELECTOR =
+  '.upload-container.chat_item.chat_message_instant';
+const ZALO_OA_IMAGE_INPUT_WAIT_MS = 5000;
+
+interface DownloadedImage {
+  base64: string;
+  name: string;
+  type: string;
+}
 
 function openZaloOaTab(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -50,11 +60,49 @@ interface SearchAndSelectResult {
   selected: boolean;
   messageFilled: boolean;
   sent: boolean;
+  imagesSelected: number;
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function imageNameFromUrl(imageUrl: string, index: number, type: string): string {
+  const pathname = new URL(imageUrl).pathname;
+  const urlName = decodeURIComponent(pathname.substring(pathname.lastIndexOf('/') + 1));
+  if (urlName) return urlName;
+  const extension = type.substring(type.indexOf('/') + 1) || 'jpg';
+  return `image-${index + 1}.${extension}`;
+}
+
+async function downloadImages(imageUrls: string[]): Promise<DownloadedImage[]> {
+  return Promise.all(imageUrls.map(async (imageUrl, index) => {
+    const response = await fetch(imageUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to download image: ${imageUrl} (${response.status})`);
+    }
+    const blob = await response.blob();
+    if (!blob.type.startsWith('image/')) {
+      throw new Error(`URL does not return an image: ${imageUrl}`);
+    }
+    return {
+      base64: arrayBufferToBase64(await blob.arrayBuffer()),
+      name: imageNameFromUrl(imageUrl, index, blob.type),
+      type: blob.type,
+    };
+  }));
 }
 
 async function sendZaloOaMessage(
   zaloOaUserId: string,
-  message: string,
+  message: string | undefined,
+  images: DownloadedImage[],
 ): Promise<SearchAndSelectResult> {
   const tabId = await ensureZaloOaTabId();
 
@@ -67,8 +115,11 @@ async function sendZaloOaMessage(
       resultWaitMs: number,
       messageInputSelector: string,
       messageInputWaitMs: number,
+      imageButtonSelector: string,
+      imageInputWaitMs: number,
       userId: string,
-      messageContent: string,
+      messageContent: string | undefined,
+      downloadedImages: DownloadedImage[],
     ): Promise<SearchAndSelectResult> => {
       async function waitForElement(selector: string, waitMs: number): Promise<Element | null> {
         const deadline = Date.now() + waitMs;
@@ -83,7 +134,7 @@ async function sendZaloOaMessage(
 
       const input = await waitForElement(inputSelector, inputWaitMs);
       if (!(input instanceof HTMLInputElement)) {
-        return { filled: false, selected: false, messageFilled: false, sent: false };
+        return { filled: false, selected: false, messageFilled: false, sent: false, imagesSelected: 0 };
       }
 
       const nativeValueSetter = Object.getOwnPropertyDescriptor(
@@ -96,34 +147,85 @@ async function sendZaloOaMessage(
 
       const firstResult = await waitForElement(resultSelector, resultWaitMs);
       if (!(firstResult instanceof HTMLElement)) {
-        return { filled: true, selected: false, messageFilled: false, sent: false };
+        return { filled: true, selected: false, messageFilled: false, sent: false, imagesSelected: 0 };
       }
 
       firstResult.click();
 
       const messageInput = await waitForElement(messageInputSelector, messageInputWaitMs);
       if (!(messageInput instanceof HTMLTextAreaElement)) {
-        return { filled: true, selected: true, messageFilled: false, sent: false };
+        return { filled: true, selected: true, messageFilled: false, sent: false, imagesSelected: 0 };
       }
 
-      const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(
-        window.HTMLTextAreaElement.prototype,
-        'value',
-      )?.set;
-      nativeTextAreaValueSetter?.call(messageInput, messageContent);
-      messageInput.dispatchEvent(new Event('input', { bubbles: true }));
-      messageInput.dispatchEvent(new Event('change', { bubbles: true }));
-      messageInput.focus();
-      messageInput.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'Enter',
-        code: 'Enter',
-        keyCode: 13,
-        which: 13,
-        bubbles: true,
-        cancelable: true,
-      }));
+      let imagesSelected = 0;
+      if (downloadedImages.length) {
+        const imageButton = await waitForElement(imageButtonSelector, messageInputWaitMs);
+        if (!(imageButton instanceof HTMLElement)) {
+          return { filled: true, selected: true, messageFilled: false, sent: false, imagesSelected: 0 };
+        }
 
-      return { filled: true, selected: true, messageFilled: true, sent: true };
+        imagesSelected = await new Promise<number>((resolve) => {
+          const originalClick = window.HTMLInputElement.prototype.click;
+          const timeout = window.setTimeout(() => {
+            window.HTMLInputElement.prototype.click = originalClick;
+            resolve(0);
+          }, imageInputWaitMs);
+
+          window.HTMLInputElement.prototype.click = function(): void {
+            if (this.type !== 'file' || !this.accept.includes('image')) {
+              originalClick.call(this);
+              return;
+            }
+
+            const transfer = new DataTransfer();
+            downloadedImages.forEach((image) => {
+              const binary = atob(image.base64);
+              const bytes = new Uint8Array(binary.length);
+              for (let index = 0; index < binary.length; ++index) {
+                bytes[index] = binary.charCodeAt(index);
+              }
+              transfer.items.add(new File([bytes], image.name, { type: image.type }));
+            });
+            this.files = transfer.files;
+            this.dispatchEvent(new Event('input', { bubbles: true }));
+            this.dispatchEvent(new Event('change', { bubbles: true }));
+
+            window.clearTimeout(timeout);
+            window.HTMLInputElement.prototype.click = originalClick;
+            resolve(transfer.files.length);
+          };
+
+          imageButton.click();
+        });
+        if (imagesSelected > 0) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      }
+
+      let messageFilled = false;
+      let sent = imagesSelected > 0;
+      if (messageContent) {
+        const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(
+          window.HTMLTextAreaElement.prototype,
+          'value',
+        )?.set;
+        nativeTextAreaValueSetter?.call(messageInput, messageContent);
+        messageInput.dispatchEvent(new Event('input', { bubbles: true }));
+        messageInput.dispatchEvent(new Event('change', { bubbles: true }));
+        messageInput.focus();
+        messageInput.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Enter',
+          code: 'Enter',
+          keyCode: 13,
+          which: 13,
+          bubbles: true,
+          cancelable: true,
+        }));
+        messageFilled = true;
+        sent = true;
+      }
+
+      return { filled: true, selected: true, messageFilled, sent, imagesSelected };
     },
     args: [
       ZALO_OA_SEARCH_INPUT_SELECTOR,
@@ -132,9 +234,13 @@ async function sendZaloOaMessage(
       ZALO_OA_SEARCH_RESULT_WAIT_MS,
       ZALO_OA_MESSAGE_INPUT_SELECTOR,
       ZALO_OA_MESSAGE_INPUT_WAIT_MS,
+      ZALO_OA_IMAGE_BUTTON_SELECTOR,
+      ZALO_OA_IMAGE_INPUT_WAIT_MS,
       zaloOaUserId,
       message,
+      images,
     ],
+    world: 'MAIN',
   });
 
   return result as SearchAndSelectResult;
@@ -150,11 +256,13 @@ export async function handleNotification(payload: NotificationPayload): Promise<
     throw new Error('zaloOaUserId is missing in notification payload');
   }
 
-  const message = payload.data?.message;
-  if (!message) {
-    throw new Error('message is missing in notification payload');
+  const message = payload.data?.message?.trim() || undefined;
+  const imageUrls = payload.data?.imageUrls ?? [];
+  if (!message && !imageUrls.length) {
+    throw new Error('message or imageUrls is required in notification payload');
   }
 
-  const result = await sendZaloOaMessage(zaloOaUserId, message);
+  const images = await downloadImages(imageUrls);
+  const result = await sendZaloOaMessage(zaloOaUserId, message, images);
   return { ...result, zaloOaUserId };
 }
