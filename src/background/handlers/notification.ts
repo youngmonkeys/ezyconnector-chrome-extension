@@ -2,6 +2,7 @@ export interface NotificationPayload {
   targetType?: string;
   data?: {
     zaloOaUserId?: string;
+    message?: string;
     [key: string]: unknown;
   };
 }
@@ -12,6 +13,9 @@ const ZALO_OA_SEARCH_INPUT_SELECTOR = '.func_search input[type="search"]';
 const ZALO_OA_SEARCH_INPUT_WAIT_MS = 15000;
 const ZALO_OA_SEARCH_RESULT_SELECTOR = '.item_mess:not(.mess_links)';
 const ZALO_OA_SEARCH_RESULT_WAIT_MS = 3000;
+const ZALO_OA_MESSAGE_INPUT_SELECTOR =
+  '.content_mess_input textarea[placeholder="Nhập nội dung tin nhắn..."]';
+const ZALO_OA_MESSAGE_INPUT_WAIT_MS = 5000;
 
 function openZaloOaTab(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -44,9 +48,14 @@ async function ensureZaloOaTabId(): Promise<number> {
 interface SearchAndSelectResult {
   filled: boolean;
   selected: boolean;
+  messageFilled: boolean;
+  sent: boolean;
 }
 
-async function fillZaloOaSearchAndSelectFirstResult(zaloOaUserId: string): Promise<SearchAndSelectResult> {
+async function sendZaloOaMessage(
+  zaloOaUserId: string,
+  message: string,
+): Promise<SearchAndSelectResult> {
   const tabId = await ensureZaloOaTabId();
 
   const [{ result }] = await chrome.scripting.executeScript({
@@ -56,7 +65,10 @@ async function fillZaloOaSearchAndSelectFirstResult(zaloOaUserId: string): Promi
       inputWaitMs: number,
       resultSelector: string,
       resultWaitMs: number,
-      value: string,
+      messageInputSelector: string,
+      messageInputWaitMs: number,
+      userId: string,
+      messageContent: string,
     ): Promise<SearchAndSelectResult> => {
       async function waitForElement(selector: string, waitMs: number): Promise<Element | null> {
         const deadline = Date.now() + waitMs;
@@ -71,31 +83,57 @@ async function fillZaloOaSearchAndSelectFirstResult(zaloOaUserId: string): Promi
 
       const input = await waitForElement(inputSelector, inputWaitMs);
       if (!(input instanceof HTMLInputElement)) {
-        return { filled: false, selected: false };
+        return { filled: false, selected: false, messageFilled: false, sent: false };
       }
 
       const nativeValueSetter = Object.getOwnPropertyDescriptor(
         window.HTMLInputElement.prototype,
         'value',
       )?.set;
-      nativeValueSetter?.call(input, value);
+      nativeValueSetter?.call(input, userId);
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
 
       const firstResult = await waitForElement(resultSelector, resultWaitMs);
       if (!(firstResult instanceof HTMLElement)) {
-        return { filled: true, selected: false };
+        return { filled: true, selected: false, messageFilled: false, sent: false };
       }
 
       firstResult.click();
-      return { filled: true, selected: true };
+
+      const messageInput = await waitForElement(messageInputSelector, messageInputWaitMs);
+      if (!(messageInput instanceof HTMLTextAreaElement)) {
+        return { filled: true, selected: true, messageFilled: false, sent: false };
+      }
+
+      const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        'value',
+      )?.set;
+      nativeTextAreaValueSetter?.call(messageInput, messageContent);
+      messageInput.dispatchEvent(new Event('input', { bubbles: true }));
+      messageInput.dispatchEvent(new Event('change', { bubbles: true }));
+      messageInput.focus();
+      messageInput.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        code: 'Enter',
+        keyCode: 13,
+        which: 13,
+        bubbles: true,
+        cancelable: true,
+      }));
+
+      return { filled: true, selected: true, messageFilled: true, sent: true };
     },
     args: [
       ZALO_OA_SEARCH_INPUT_SELECTOR,
       ZALO_OA_SEARCH_INPUT_WAIT_MS,
       ZALO_OA_SEARCH_RESULT_SELECTOR,
       ZALO_OA_SEARCH_RESULT_WAIT_MS,
+      ZALO_OA_MESSAGE_INPUT_SELECTOR,
+      ZALO_OA_MESSAGE_INPUT_WAIT_MS,
       zaloOaUserId,
+      message,
     ],
   });
 
@@ -112,6 +150,11 @@ export async function handleNotification(payload: NotificationPayload): Promise<
     throw new Error('zaloOaUserId is missing in notification payload');
   }
 
-  const { filled, selected } = await fillZaloOaSearchAndSelectFirstResult(zaloOaUserId);
-  return { filled, selected, zaloOaUserId };
+  const message = payload.data?.message;
+  if (!message) {
+    throw new Error('message is missing in notification payload');
+  }
+
+  const result = await sendZaloOaMessage(zaloOaUserId, message);
+  return { ...result, zaloOaUserId };
 }
