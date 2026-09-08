@@ -7,6 +7,9 @@
     "build": "node esbuild.js",
     "watch": "node esbuild.js --watch"
   },
+  "dependencies": {
+    "ezyfox-es6-client": "^1.2.1"
+  },
   "devDependencies": {
     "@types/chrome": "^0.0.270",
     "esbuild": "^0.24.0",

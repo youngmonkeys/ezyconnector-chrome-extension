@@ -1,6 +1,7 @@
 import { EzyRequestMessage, EzyResponseMessage } from './types';
 import { handleDomAction, DomActionPayload } from './handlers/dom-automation';
 import { handleHttpProxy, HttpProxyPayload } from './handlers/http-proxy';
+import { handleNotification, NotificationPayload } from './handlers/notification';
 
 export async function dispatch(message: EzyRequestMessage): Promise<EzyResponseMessage> {
   try {
@@ -24,6 +25,10 @@ async function route(message: EzyRequestMessage): Promise<unknown> {
 
   if (type === 'http.request') {
     return handleHttpProxy(payload as HttpProxyPayload);
+  }
+
+  if (type === 'notification') {
+    return handleNotification((payload ?? {}) as NotificationPayload);
   }
 
   throw new Error(`Unknown request type: ${type}`);

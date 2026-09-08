@@ -1,104 +1,98 @@
+import Ezy from 'ezyfox-es6-client';
 import { ConnectionConfig, EzyRequestMessage, EzyResponseMessage } from './types';
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
-const MAX_RECONNECT_DELAY_MS = 30000;
+const ZONE_NAME = 'chat';
+const APP_NAME = 'ezychat';
+const CMD_CONNECTOR_REQUEST = 'connectorRequest';
+const CMD_CONNECTOR_RESPONSE = 'connectorResponse';
 
 export class EzyWebSocketClient {
-  private ws: WebSocket | null = null;
+  private readonly client: any;
+  private app: any = null;
   private config: ConnectionConfig | null = null;
-  private reconnectAttempts = 0;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private manuallyClosed = false;
 
   constructor(
     private readonly onMessage: (message: EzyRequestMessage) => void,
     private readonly onStatusChange: (status: ConnectionStatus) => void,
-  ) {}
+  ) {
+    this.client = this.createClient();
+  }
 
   connect(config: ConnectionConfig): void {
     this.config = config;
-    this.manuallyClosed = false;
-    this.reconnectAttempts = 0;
-    this.ws?.close();
-    this.open();
+    this.onStatusChange('connecting');
+    this.client.connect(config.wsUrl);
   }
 
   disconnect(): void {
-    this.manuallyClosed = true;
-    this.clearReconnectTimer();
-    this.ws?.close();
-    this.ws = null;
+    this.app = null;
+    this.client.disconnect();
     this.onStatusChange('disconnected');
   }
 
   send(message: EzyResponseMessage): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message));
+    if (this.app) {
+      this.app.send(CMD_CONNECTOR_RESPONSE, message);
     }
   }
 
-  private open(): void {
-    if (!this.config) return;
-    this.onStatusChange('connecting');
+  private createClient(): any {
+    const clientConfig = new Ezy.ClientConfig();
+    clientConfig.zoneName = ZONE_NAME;
+    clientConfig.reconnect.maxReconnectCount = 32768;
 
-    const url = new URL(this.config.wsUrl);
-    if (this.config.token) {
-      url.searchParams.set('token', this.config.token);
-    }
+    const client = Ezy.Clients.getInstance().newClient(clientConfig);
+    const { setup } = client;
 
-    const ws = new WebSocket(url.toString());
-    this.ws = ws;
+    const connectionFailureHandler = new Ezy.ConnectionFailureHandler();
+    connectionFailureHandler.postHandle = () => this.onStatusChange('error');
 
-    ws.addEventListener('open', () => {
-      this.reconnectAttempts = 0;
-      this.onStatusChange('connected');
-    });
-
-    ws.addEventListener('message', (event) => {
-      this.handleRawMessage(event.data);
-    });
-
-    ws.addEventListener('close', () => {
+    const disconnectionHandler = new Ezy.DisconnectionHandler();
+    disconnectionHandler.preHandle = () => {
+      this.app = null;
       this.onStatusChange('disconnected');
-      if (!this.manuallyClosed) {
-        this.scheduleReconnect();
-      }
-    });
+    };
 
-    ws.addEventListener('error', () => {
-      this.onStatusChange('error');
-    });
-  }
+    const handshakeHandler = new Ezy.HandshakeHandler();
+    handshakeHandler.getLoginRequest = () => {
+      const username = 'useAccessToken';
+      const password = 'useAccessToken';
+      const data = { adminAccessToken: this.config?.token ?? '' };
+      return [ZONE_NAME, username, password, data];
+    };
 
-  private handleRawMessage(data: unknown): void {
-    if (typeof data !== 'string') return;
+    const loginErrorHandler = new Ezy.LoginErrorHandler();
+    loginErrorHandler.handleLoginError = () => this.onStatusChange('error');
 
-    let message: EzyRequestMessage;
-    try {
-      message = JSON.parse(data);
-    } catch {
-      return;
-    }
+    const loginSuccessHandler = new Ezy.LoginSuccessHandler();
+    loginSuccessHandler.handleLoginSuccess = () => {
+      client.sendRequest(Ezy.Command.APP_ACCESS, [APP_NAME]);
+    };
 
-    if (!message || typeof message.id !== 'string' || typeof message.type !== 'string') {
-      return;
-    }
+    const appAccessHandler = new Ezy.AppAccessHandler();
+    appAccessHandler.postHandle = (app: unknown) => {
+      this.app = app;
+      this.onStatusChange('connected');
+    };
 
-    this.onMessage(message);
-  }
+    setup.addEventHandler(Ezy.EventType.CONNECTION_FAILURE, connectionFailureHandler);
+    setup.addEventHandler(Ezy.EventType.DISCONNECTION, disconnectionHandler);
+    setup.addDataHandler(Ezy.Command.HANDSHAKE, handshakeHandler);
+    setup.addDataHandler(Ezy.Command.LOGIN, loginSuccessHandler);
+    setup.addDataHandler(Ezy.Command.LOGIN_ERROR, loginErrorHandler);
+    setup.addDataHandler(Ezy.Command.APP_ACCESS, appAccessHandler);
 
-  private scheduleReconnect(): void {
-    this.clearReconnectTimer();
-    const delay = Math.min(MAX_RECONNECT_DELAY_MS, 1000 * 2 ** this.reconnectAttempts);
-    this.reconnectAttempts += 1;
-    this.reconnectTimer = setTimeout(() => this.open(), delay);
-  }
+    setup.setupApp(APP_NAME).addDataHandler(
+      CMD_CONNECTOR_REQUEST,
+      (_app: unknown, data: EzyRequestMessage) => {
+        if (data && typeof data.id === 'string' && typeof data.type === 'string') {
+          this.onMessage(data);
+        }
+      },
+    );
 
-  private clearReconnectTimer(): void {
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
+    return client;
   }
 }
