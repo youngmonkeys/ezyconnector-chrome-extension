@@ -8,6 +8,7 @@ nhận các yêu cầu (request) từ server và thực thi trực tiếp trên 
 - `src/background/index.ts` — service worker: khởi tạo/duy trì kết nối WebSocket, dispatch request đến handler tương ứng, gửi response ngược lại server.
 - `src/background/websocket-client.ts` — client WebSocket có tự động reconnect (exponential backoff).
 - `src/background/dispatcher.ts` — định tuyến request theo `type` tới handler xử lý.
+- `src/background/commands/` — registry các command độc lập nền tảng và bộ thực thi workflow.
 - `src/background/handlers/dom-automation.ts` — các action `dom.*` (đọc HTML/text, click, điền form) chạy trên tab qua `chrome.scripting.executeScript`.
 - `src/background/handlers/http-proxy.ts` — action `http.request`, thực hiện fetch thay server (dùng cookie/session của trình duyệt).
 - `src/popup/` — popup cấu hình WebSocket URL + token, hiển thị trạng thái kết nối.
@@ -41,6 +42,60 @@ hoặc khi lỗi:
 - `http.request` — `payload.url`, `payload.method`, `payload.headers`, `payload.body`.
 
 Thêm action mới bằng cách bổ sung handler trong `src/background/handlers/` và route trong `dispatcher.ts`.
+
+## Workflow command
+
+Server có thể gửi một kịch bản gồm các command nguyên tử. Extension chỉ thực thi các command
+đã đăng ký, không nhận hoặc chạy JavaScript tùy ý:
+
+```json
+{
+  "id": "req-2",
+  "type": "workflow.execute",
+  "payload": {
+    "version": 1,
+    "input": { "userId": "123", "message": "Xin chào" },
+    "commands": [
+      {
+        "name": "tab.ensure",
+        "args": {
+          "url": "https://oa.zalo.me/chat",
+          "urlPattern": "https://oa.zalo.me/*"
+        },
+        "saveAs": "chatTab"
+      },
+      {
+        "name": "dom.fill",
+        "args": {
+          "tabId": "${chatTab.id}",
+          "selector": ".func_search input[type='search']",
+          "value": "${input.userId}"
+        }
+      },
+      {
+        "name": "dom.wait",
+        "args": {
+          "tabId": "${chatTab.id}",
+          "selector": ".item_mess:not(.mess_links)",
+          "timeoutMs": 10000
+        }
+      },
+      {
+        "name": "dom.click",
+        "args": {
+          "tabId": "${chatTab.id}",
+          "selector": ".item_mess:not(.mess_links)"
+        }
+      }
+    ]
+  }
+}
+```
+
+Biến lưu bằng `saveAs` và dữ liệu trong `input` có thể được tham chiếu qua cú pháp
+`${variable.path}`. Các command hiện có: `tab.ensure`, `dom.getHtml`, `dom.getText`,
+`dom.wait`, `dom.click`, `dom.fill`, `dom.keypress`, `dom.uploadRemoteFiles` và
+`http.request`. Workflow tối đa 100 command; thời gian chờ của một command tối đa 60 giây.
 
 ## Cài đặt & build
 

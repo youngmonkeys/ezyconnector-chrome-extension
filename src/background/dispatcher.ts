@@ -1,11 +1,26 @@
-import { EzyRequestMessage, EzyResponseMessage } from './types';
+import { ConnectorLogMessage, EzyRequestMessage, EzyResponseMessage } from './types';
 import { handleDomAction, DomActionPayload } from './handlers/dom-automation';
 import { handleHttpProxy, HttpProxyPayload } from './handlers/http-proxy';
 import { handleNotification, NotificationPayload } from './handlers/notification';
+import { browserCommands } from './commands/browser-commands';
+import { CommandRegistry } from './commands/command-registry';
+import { WorkflowExecutor } from './commands/workflow-executor';
+import { WorkflowPayload } from './commands/types';
 
-export async function dispatch(message: EzyRequestMessage): Promise<EzyResponseMessage> {
+const commandRegistry = new CommandRegistry();
+browserCommands.forEach((command) => commandRegistry.register(command));
+commandRegistry.register({
+  name: 'http.request',
+  execute: (_context, args) => handleHttpProxy(args as HttpProxyPayload),
+});
+const workflowExecutor = new WorkflowExecutor(commandRegistry);
+
+export async function dispatch(
+  message: EzyRequestMessage,
+  onLog?: (message: ConnectorLogMessage) => void,
+): Promise<EzyResponseMessage> {
   try {
-    const data = await route(message);
+    const data = await route(message, onLog);
     return { id: message.id, ok: true, data };
   } catch (error) {
     return {
@@ -16,7 +31,10 @@ export async function dispatch(message: EzyRequestMessage): Promise<EzyResponseM
   }
 }
 
-async function route(message: EzyRequestMessage): Promise<unknown> {
+async function route(
+  message: EzyRequestMessage,
+  onLog?: (message: ConnectorLogMessage) => void,
+): Promise<unknown> {
   const { type, payload } = message;
 
   if (type.startsWith('dom.')) {
@@ -29,6 +47,13 @@ async function route(message: EzyRequestMessage): Promise<unknown> {
 
   if (type === 'notification') {
     return handleNotification((payload ?? {}) as NotificationPayload);
+  }
+
+  if (type === 'workflow.execute') {
+    return workflowExecutor.execute(
+      (payload ?? {}) as WorkflowPayload,
+      (log) => onLog?.({ requestId: message.id, ...log }),
+    );
   }
 
   throw new Error(`Unknown request type: ${type}`);

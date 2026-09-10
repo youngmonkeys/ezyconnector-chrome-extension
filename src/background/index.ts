@@ -8,7 +8,7 @@ let status: ConnectionStatus = 'disconnected';
 
 const client = new EzyWebSocketClient(
   async (message: EzyRequestMessage) => {
-    const response = await dispatch(message);
+    const response = await dispatch(message, (log) => client.sendLog(log));
     client.send(response);
   },
   (newStatus) => {
