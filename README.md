@@ -93,9 +93,20 @@ Server có thể gửi một kịch bản gồm các command nguyên tử. Exten
 ```
 
 Biến lưu bằng `saveAs` và dữ liệu trong `input` có thể được tham chiếu qua cú pháp
-`${variable.path}`. Các command hiện có: `tab.ensure`, `dom.getHtml`, `dom.getText`,
+`${variable.path}`. Các command hiện có: `flow.delay`, `tab.ensure`, `dom.getHtml`, `dom.getText`,
 `dom.wait`, `dom.click`, `dom.fill`, `dom.keypress`, `dom.uploadRemoteFiles` và
 `http.request`. Workflow tối đa 100 command; thời gian chờ của một command tối đa 60 giây.
+
+Chèn một khoảng nghỉ giữa hai bước bằng command:
+
+```json
+{
+  "name": "flow.delay",
+  "args": {
+    "durationMs": 500
+  }
+}
+```
 
 ## Cài đặt & build
 

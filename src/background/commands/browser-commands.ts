@@ -1,6 +1,7 @@
 import { Command, CommandContext } from './types';
 
 interface TabArgs { tabId?: number; }
+interface DelayArgs { durationMs: number; }
 interface SelectorArgs extends TabArgs { selector: string; timeoutMs?: number; }
 interface FillArgs extends SelectorArgs { value?: string; }
 interface KeypressArgs extends SelectorArgs { key: string; }
@@ -74,6 +75,20 @@ function simpleCommand<TArgs>(
 }
 
 export const browserCommands: Command[] = [
+  simpleCommand<DelayArgs>('flow.delay', async (args) => {
+    const durationMs = args?.durationMs;
+    if (
+      typeof durationMs !== 'number'
+      || !Number.isInteger(durationMs)
+      || durationMs < 0
+      || durationMs > MAX_WAIT_MS
+    ) {
+      throw new Error(`durationMs must be an integer between 0 and ${MAX_WAIT_MS}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, durationMs));
+    return { durationMs };
+  }),
+
   simpleCommand<EnsureTabArgs>('tab.ensure', async (args) => {
     const url = safeUrl(args.url, 'url');
     const pattern = args.urlPattern || url;
