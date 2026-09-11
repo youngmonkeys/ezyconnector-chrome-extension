@@ -6,6 +6,7 @@ const watch = process.argv.includes('--watch');
 
 const staticFiles = [
   ['manifest.json', 'dist/manifest.json'],
+  ['_locales', 'dist/_locales'],
   ['src/popup/popup.html', 'dist/popup.html'],
   ['src/popup/popup.css', 'dist/popup.css'],
 ];
@@ -13,7 +14,7 @@ const staticFiles = [
 async function copyStatic() {
   await mkdir('dist', { recursive: true });
   for (const [src, dest] of staticFiles) {
-    await cp(src, dest);
+    await cp(src, dest, { recursive: true });
   }
 }
 

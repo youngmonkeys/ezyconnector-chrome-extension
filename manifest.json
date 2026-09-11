@@ -2,7 +2,8 @@
   "manifest_version": 3,
   "name": "EzyConnector",
   "version": "0.1.0",
-  "description": "Kết nối trình duyệt tới hệ thống EzyPlatform qua WebSocket và thực thi các yêu cầu được gửi đến.",
+  "description": "__MSG_extensionDescription__",
+  "default_locale": "vi",
   "permissions": ["storage", "scripting", "tabs", "cookies"],
   "host_permissions": ["<all_urls>"],
   "background": {

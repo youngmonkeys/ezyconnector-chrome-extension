@@ -1,0 +1,5 @@
+{
+  "extensionDescription": {
+    "message": "Connects the browser to EzyPlatform systems via WebSocket and executes incoming requests."
+  }
+}
