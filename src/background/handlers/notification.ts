@@ -6,7 +6,10 @@ export interface ZaloOaSendMessagePayload {
 
 const ZALO_OA_TAB_URL_PATTERN = 'https://oa.zalo.me/*';
 const ZALO_OA_CHAT_URL = 'https://oa.zalo.me/chat';
-const ZALO_OA_SEARCH_INPUT_SELECTOR = '.func_search input[type="search"]';
+const ZALO_OA_SEARCH_BUTTON_SELECTOR = '.func_search .btn_search';
+const ZALO_OA_SEARCH_PANEL_SELECTOR = '.func_search .search_main';
+const ZALO_OA_SEARCH_INPUT_SELECTOR =
+  '.func_search .search_main input[type="search"]';
 const ZALO_OA_SEARCH_INPUT_WAIT_MS = 15000;
 const ZALO_OA_SEARCH_RESULT_SELECTOR = '.item_mess:not(.mess_links)';
 const ZALO_OA_SEARCH_RESULT_WAIT_MS = 10000;
@@ -150,6 +153,8 @@ async function sendZaloOaMessage(
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId },
     func: async (
+      searchButtonSelector: string,
+      searchPanelSelector: string,
       inputSelector: string,
       inputWaitMs: number,
       resultSelector: string,
@@ -187,6 +192,21 @@ async function sendZaloOaMessage(
         return found;
       }
 
+      async function waitForVisibleElement(
+        selector: string,
+        waitMs: number,
+      ): Promise<Element | null> {
+        const deadline = Date.now() + waitMs;
+        while (Date.now() < deadline) {
+          const element = document.querySelector(selector);
+          if (element && getComputedStyle(element).display !== 'none') {
+            return element;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        return null;
+      }
+
       async function waitRandom(step: string): Promise<void> {
         const durationMs = Math.floor(
           Math.random() * (maxStepDelayMs - minStepDelayMs + 1),
@@ -199,7 +219,22 @@ async function sendZaloOaMessage(
         hasMessage: Boolean(messageContent),
         imageCount: downloadedImages.length,
       });
-      const input = await waitForElement(inputSelector, inputWaitMs);
+      let searchPanel = document.querySelector(searchPanelSelector);
+      if (!searchPanel || getComputedStyle(searchPanel).display === 'none') {
+        const searchButton = await waitForElement(searchButtonSelector, inputWaitMs);
+        if (!(searchButton instanceof HTMLElement)) {
+          log('search button is unavailable', { searchButtonSelector });
+          return { filled: false, selected: false, messageFilled: false, sent: false, imagesSelected: 0 };
+        }
+        await waitRandom('open recipient search');
+        searchButton.click();
+        searchPanel = await waitForVisibleElement(searchPanelSelector, inputWaitMs);
+      }
+      if (!searchPanel) {
+        log('search panel is unavailable', { searchPanelSelector });
+        return { filled: false, selected: false, messageFilled: false, sent: false, imagesSelected: 0 };
+      }
+      const input = await waitForVisibleElement(inputSelector, inputWaitMs);
       if (!(input instanceof HTMLInputElement)) {
         log('search input is unavailable');
         return { filled: false, selected: false, messageFilled: false, sent: false, imagesSelected: 0 };
@@ -370,6 +405,8 @@ async function sendZaloOaMessage(
       };
     },
     args: [
+      ZALO_OA_SEARCH_BUTTON_SELECTOR,
+      ZALO_OA_SEARCH_PANEL_SELECTOR,
       ZALO_OA_SEARCH_INPUT_SELECTOR,
       ZALO_OA_SEARCH_INPUT_WAIT_MS,
       ZALO_OA_SEARCH_RESULT_SELECTOR,
@@ -431,7 +468,14 @@ export async function handleZaloOaSendMessage(
       runId,
     );
     const result = await sendZaloOaMessage(zaloOaUserId, message, images, runId);
-    if (!result.selected) {
+    if (!result.filled) {
+      console.warn(
+        ZALO_OA_LOG_PREFIX,
+        runId,
+        'recipient search input was not found',
+        { selector: ZALO_OA_SEARCH_INPUT_SELECTOR },
+      );
+    } else if (!result.selected) {
       console.warn(
         ZALO_OA_LOG_PREFIX,
         runId,

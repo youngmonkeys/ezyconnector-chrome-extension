@@ -22,7 +22,7 @@ Server gửi xuống dữ liệu cho tác vụ cố định:
   "payload": {
     "zaloOaUserId": "123",
     "message": "Xin chào",
-    "imageUrls": ["https://admin.example.com/images/example.jpg"]
+    "imageUrls": ["https://cdn.example.com/images/example.jpg"]
   }
 }
 ```
