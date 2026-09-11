@@ -51,6 +51,29 @@ npm run build      # build một lần, output vào dist/
 npm run watch       # build lại mỗi khi sửa code
 ```
 
+## Đóng gói để phát hành
+
+1. Đồng bộ version trong `manifest.json`, `package.json` và `package-lock.json`.
+2. Build extension:
+
+   ```bash
+   npm run build
+   ```
+
+3. Nén **nội dung bên trong** thư mục `dist/` (không nén cả thư mục `dist`) để
+   `manifest.json` nằm ngay tại thư mục gốc của file ZIP:
+
+   ```bash
+   mkdir -p release
+   cd dist
+   zip -r ../release/ezy-connector-0.0.1.zip . -x '*.map'
+   cd ..
+   ```
+
+4. Tải file `release/ezy-connector-0.0.1.zip` lên Chrome Web Store. Thư mục
+   `release/` đã được Git bỏ qua. Khi phát hành phiên bản mới, thay `0.0.1` trong
+   tên file bằng version tương ứng.
+
 ## Load vào Chrome
 
 1. `npm run build`.
