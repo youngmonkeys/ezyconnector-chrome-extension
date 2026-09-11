@@ -60,9 +60,11 @@ function openZaloOaTab(): Promise<number> {
 
 async function ensureZaloOaTabId(): Promise<number> {
   const tabs = await chrome.tabs.query({ url: ZALO_OA_TAB_URL_PATTERN });
-  const existingTabId = tabs[0]?.id;
-  if (existingTabId) {
-    return existingTabId;
+  const existingTab = tabs[0];
+  if (existingTab?.id !== undefined) {
+    await chrome.windows.update(existingTab.windowId, { focused: true });
+    await chrome.tabs.update(existingTab.id, { active: true });
+    return existingTab.id;
   }
   return openZaloOaTab();
 }
