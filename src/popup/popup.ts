@@ -6,6 +6,11 @@ interface AdminCredentials {
 
 const CREDENTIALS_KEY = 'ezyConnectorCredentials';
 const CONNECTION_KEY = 'ezyConnectorConnection';
+const DATA_CONSENT_KEY = 'ezyConnectorDataConsent';
+
+let dataConsentAccepted = false;
+let isConnected = false;
+let isLoggingIn = false;
 
 const form = document.getElementById('config-form') as HTMLFormElement;
 const adminUrlInput = document.getElementById('admin-url') as HTMLInputElement;
@@ -40,17 +45,38 @@ async function loadCredentials(): Promise<void> {
   }
 }
 
+async function loadDataConsent(): Promise<void> {
+  const result = await chrome.storage.local.get(DATA_CONSENT_KEY);
+  dataConsentAccepted = result[DATA_CONSENT_KEY] === true;
+  renderDataConsent();
+  renderLoginButton();
+}
+
+function renderDataConsent(): void {
+  const hidden = dataConsentAccepted || isConnected;
+  dataConsentField.hidden = hidden;
+  dataConsentInput.disabled = hidden;
+}
+
+function renderLoginButton(): void {
+  loginBtn.hidden = isConnected;
+  loginBtn.disabled = isConnected
+    || isLoggingIn
+    || (!dataConsentAccepted && !dataConsentInput.checked);
+}
+
 function renderStatus(status: string): void {
   statusDot.className = `dot ${status}`;
   statusText.textContent = STATUS_LABELS[status] ?? status;
 
-  const connected = status === 'connected';
-  passwordField.hidden = connected;
-  passwordInput.disabled = connected;
-  dataConsentField.hidden = connected;
-  dataConsentInput.disabled = connected;
-  loginBtn.hidden = connected;
-  loginBtn.disabled = connected;
+  isConnected = status === 'connected';
+  adminUrlInput.readOnly = isConnected;
+  usernameInput.readOnly = isConnected;
+  allowedImageOriginsInput.readOnly = isConnected;
+  passwordField.hidden = isConnected;
+  passwordInput.disabled = isConnected;
+  renderDataConsent();
+  renderLoginButton();
 }
 
 function refreshStatus(): void {
@@ -102,10 +128,11 @@ function parseImageOrigins(value: string): string[] {
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
   clearError();
-  loginBtn.disabled = true;
+  isLoggingIn = true;
+  renderLoginButton();
   loginBtn.textContent = 'Đang đăng nhập...';
   try {
-    if (!dataConsentInput.checked) {
+    if (!dataConsentAccepted && !dataConsentInput.checked) {
       throw new Error('Bạn cần đồng ý cho extension xử lý dữ liệu để tiếp tục');
     }
     const adminOrigin = normalizeAdminOrigin(adminUrlInput.value.trim());
@@ -123,10 +150,12 @@ form.addEventListener('submit', async (event) => {
       adminUrl: adminUrlInput.value.trim(),
       username: usernameInput.value.trim(),
       password: passwordInput.value,
-      consentAccepted: true,
+      consentAccepted: dataConsentAccepted || dataConsentInput.checked,
       allowedImageOrigins,
     });
     if (response?.ok) {
+      dataConsentAccepted = true;
+      renderDataConsent();
       passwordInput.value = '';
     } else {
       showError(response?.error ?? 'Đăng nhập thất bại');
@@ -134,10 +163,13 @@ form.addEventListener('submit', async (event) => {
   } catch (error) {
     showError(error instanceof Error ? error.message : String(error));
   } finally {
-    loginBtn.disabled = false;
+    isLoggingIn = false;
+    renderLoginButton();
     loginBtn.textContent = 'Đăng nhập & Kết nối';
   }
 });
+
+dataConsentInput.addEventListener('change', renderLoginButton);
 
 disconnectBtn.addEventListener('click', async () => {
   clearError();
@@ -152,10 +184,18 @@ chrome.runtime.onMessage.addListener((message) => {
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && CONNECTION_KEY in changes && !changes[CONNECTION_KEY].newValue) {
-    renderStatus('disconnected');
+  if (area === 'local') {
+    if (CONNECTION_KEY in changes && !changes[CONNECTION_KEY].newValue) {
+      renderStatus('disconnected');
+    }
+    if (DATA_CONSENT_KEY in changes) {
+      dataConsentAccepted = changes[DATA_CONSENT_KEY].newValue === true;
+      renderDataConsent();
+      renderLoginButton();
+    }
   }
 });
 
 loadCredentials();
+loadDataConsent();
 refreshStatus();

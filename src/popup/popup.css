@@ -98,6 +98,13 @@ textarea {
   resize: vertical;
 }
 
+input:read-only,
+textarea:read-only {
+  background: #f6f8fa;
+  color: #57606a;
+  cursor: default;
+}
+
 small {
   color: #57606a;
   font-size: 11px;
@@ -124,4 +131,9 @@ button[type='submit'] {
   background: #2563eb;
   border-color: #2563eb;
   color: #fff;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
