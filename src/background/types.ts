@@ -11,6 +11,17 @@ export interface EzyResponseMessage {
   error?: string;
 }
 
+export interface WorkflowCommand {
+  name: string;
+  args?: Record<string, unknown>;
+  saveAs?: string;
+}
+
+export interface WorkflowPayload {
+  version: number;
+  commands: WorkflowCommand[];
+}
+
 export interface AdminCredentials {
   adminUrl: string;
   username: string;

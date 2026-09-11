@@ -5,9 +5,7 @@
   "description": "__MSG_extensionDescription__",
   "default_locale": "vi",
   "permissions": ["storage", "scripting", "cookies"],
-  "host_permissions": [
-    "https://oa.zalo.me/*"
-  ],
+  "host_permissions": ["<all_urls>"],
   "optional_host_permissions": [
     "https://*/*",
     "http://localhost/*",
