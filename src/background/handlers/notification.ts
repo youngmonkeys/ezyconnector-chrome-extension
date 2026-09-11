@@ -215,8 +215,35 @@ async function sendZaloOaMessage(
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
       await waitRandom('enter recipient id');
-      nativeValueSetter?.call(input, userId);
-      input.dispatchEvent(new Event('input', { bubbles: true }));
+      let typedValue = '';
+      for (const character of userId) {
+        input.dispatchEvent(new KeyboardEvent('keydown', {
+          key: character,
+          bubbles: true,
+          cancelable: true,
+        }));
+        input.dispatchEvent(new InputEvent('beforeinput', {
+          inputType: 'insertText',
+          data: character,
+          bubbles: true,
+          cancelable: true,
+        }));
+        typedValue += character;
+        nativeValueSetter?.call(input, typedValue);
+        input.dispatchEvent(new InputEvent('input', {
+          inputType: 'insertText',
+          data: character,
+          bubbles: true,
+        }));
+        input.dispatchEvent(new KeyboardEvent('keyup', {
+          key: character,
+          bubbles: true,
+        }));
+        await new Promise((resolve) => setTimeout(
+          resolve,
+          40 + Math.floor(Math.random() * 61),
+        ));
+      }
       input.dispatchEvent(new Event('change', { bubbles: true }));
       log('search user id cleared and filled again');
 
