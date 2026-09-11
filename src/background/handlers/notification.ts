@@ -25,18 +25,15 @@ const MAX_IMAGES = 10;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MIN_STEP_DELAY_MS = 350;
 const MAX_STEP_DELAY_MS = 900;
+const MIN_FAST_DELAY_MS = 80;
+const MAX_FAST_DELAY_MS = 200;
+const MIN_ACTIVATE_TO_SEARCH_DELAY_MS = 20;
+const MAX_ACTIVATE_TO_SEARCH_DELAY_MS = 60;
 
 interface DownloadedImage {
   base64: string;
   name: string;
   type: string;
-}
-
-function randomStepDelay(): Promise<void> {
-  const durationMs = Math.floor(
-    Math.random() * (MAX_STEP_DELAY_MS - MIN_STEP_DELAY_MS + 1),
-  ) + MIN_STEP_DELAY_MS;
-  return new Promise((resolve) => setTimeout(resolve, durationMs));
 }
 
 function openZaloOaTab(): Promise<number> {
@@ -58,12 +55,26 @@ function openZaloOaTab(): Promise<number> {
   });
 }
 
-async function ensureZaloOaTabId(): Promise<number> {
+async function ensureZaloOaTabId(runId: string): Promise<number> {
+  const startedAt = Date.now();
   const tabs = await chrome.tabs.query({ url: ZALO_OA_TAB_URL_PATTERN });
+  console.info(ZALO_OA_LOG_PREFIX, runId, 'Zalo OA tab query completed', {
+    durationMs: Date.now() - startedAt,
+    found: tabs.length,
+  });
   const existingTab = tabs[0];
   if (existingTab?.id !== undefined) {
+    const focusStartedAt = Date.now();
     await chrome.windows.update(existingTab.windowId, { focused: true });
+    console.info(ZALO_OA_LOG_PREFIX, runId, 'Zalo OA window focused', {
+      durationMs: Date.now() - focusStartedAt,
+    });
+    const activateStartedAt = Date.now();
     await chrome.tabs.update(existingTab.id, { active: true });
+    console.info(ZALO_OA_LOG_PREFIX, runId, 'Zalo OA tab activated', {
+      durationMs: Date.now() - activateStartedAt,
+      elapsedMs: Date.now() - startedAt,
+    });
     return existingTab.id;
   }
   return openZaloOaTab();
@@ -148,10 +159,13 @@ async function sendZaloOaMessage(
   runId: string,
 ): Promise<SearchAndSelectResult> {
   console.info(ZALO_OA_LOG_PREFIX, runId, 'finding Zalo OA tab');
-  const tabId = await ensureZaloOaTabId();
+  const tabId = await ensureZaloOaTabId(runId);
   console.info(ZALO_OA_LOG_PREFIX, runId, 'using Zalo OA tab', { tabId });
-  await randomStepDelay();
+  console.info(ZALO_OA_LOG_PREFIX, runId, 'starting page automation', {
+    delayAfterActivationMs: 0,
+  });
 
+  const executeScriptStartedAt = Date.now();
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId },
     func: async (
@@ -171,6 +185,10 @@ async function sendZaloOaMessage(
       executionId: string,
       minStepDelayMs: number,
       maxStepDelayMs: number,
+      minFastDelayMs: number,
+      maxFastDelayMs: number,
+      minActivateToSearchDelayMs: number,
+      maxActivateToSearchDelayMs: number,
     ): Promise<SearchAndSelectResult> => {
       const logPrefix = '[EzyConnector][ZaloOA]';
       const log = (step: string, details?: unknown): void => {
@@ -217,7 +235,25 @@ async function sendZaloOaMessage(
         await new Promise((resolve) => setTimeout(resolve, durationMs));
       }
 
+      async function waitFast(step: string): Promise<void> {
+        const durationMs = Math.floor(
+          Math.random() * (maxFastDelayMs - minFastDelayMs + 1),
+        ) + minFastDelayMs;
+        log('waiting before step', { step, durationMs });
+        await new Promise((resolve) => setTimeout(resolve, durationMs));
+      }
+
+      async function waitBeforeOpeningSearch(): Promise<void> {
+        const durationMs = Math.floor(
+          Math.random()
+            * (maxActivateToSearchDelayMs - minActivateToSearchDelayMs + 1),
+        ) + minActivateToSearchDelayMs;
+        log('waiting before step', { step: 'open recipient search', durationMs });
+        await new Promise((resolve) => setTimeout(resolve, durationMs));
+      }
+
       log('page automation started', {
+        startedAt: Date.now(),
         hasMessage: Boolean(messageContent),
         imageCount: downloadedImages.length,
       });
@@ -228,8 +264,10 @@ async function sendZaloOaMessage(
           log('search button is unavailable', { searchButtonSelector });
           return { filled: false, selected: false, messageFilled: false, sent: false, imagesSelected: 0 };
         }
-        await waitRandom('open recipient search');
+        log('search button ready', { readyAt: Date.now() });
+        await waitBeforeOpeningSearch();
         searchButton.click();
+        log('search button clicked', { clickedAt: Date.now() });
         searchPanel = await waitForVisibleElement(searchPanelSelector, inputWaitMs);
       }
       if (!searchPanel) {
@@ -246,12 +284,12 @@ async function sendZaloOaMessage(
         window.HTMLInputElement.prototype,
         'value',
       )?.set;
-      await waitRandom('fill recipient search');
+      await waitFast('fill recipient search');
       input.focus();
       nativeValueSetter?.call(input, '');
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
-      await waitRandom('enter recipient id');
+      await waitFast('enter recipient id');
       let typedValue = '';
       for (const character of userId) {
         input.dispatchEvent(new KeyboardEvent('keydown', {
@@ -423,8 +461,16 @@ async function sendZaloOaMessage(
       runId,
       MIN_STEP_DELAY_MS,
       MAX_STEP_DELAY_MS,
+      MIN_FAST_DELAY_MS,
+      MAX_FAST_DELAY_MS,
+      MIN_ACTIVATE_TO_SEARCH_DELAY_MS,
+      MAX_ACTIVATE_TO_SEARCH_DELAY_MS,
     ],
     world: 'MAIN',
+  });
+
+  console.info(ZALO_OA_LOG_PREFIX, runId, 'page automation returned', {
+    durationMs: Date.now() - executeScriptStartedAt,
   });
 
   return result as SearchAndSelectResult;
