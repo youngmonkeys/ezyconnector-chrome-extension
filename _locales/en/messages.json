@@ -1,5 +1,5 @@
 {
   "extensionDescription": {
-    "message": "Connects the browser to EzyPlatform systems via WebSocket and executes incoming requests."
+    "message": "Connects EzyPlatform to Zalo OA to send messages and images from received notifications."
   }
 }

@@ -1,7 +1,6 @@
 import Ezy from 'ezyfox-es6-client';
 import {
   ConnectionConfig,
-  ConnectorLogMessage,
   EzyRequestMessage,
   EzyResponseMessage,
 } from './types';
@@ -12,7 +11,6 @@ const ZONE_NAME = 'chat';
 const APP_NAME = 'ezychat';
 const CMD_CONNECTOR_REQUEST = 'connectorRequest';
 const CMD_CONNECTOR_RESPONSE = 'connectorResponse';
-const CMD_CONNECTOR_LOG = 'connectorLog';
 
 export class EzyWebSocketClient {
   private readonly client: any;
@@ -41,16 +39,6 @@ export class EzyWebSocketClient {
   send(message: EzyResponseMessage): void {
     if (this.app) {
       this.app.send(CMD_CONNECTOR_RESPONSE, message);
-    }
-  }
-
-  sendLog(message: ConnectorLogMessage): void {
-    if (this.app) {
-      try {
-        this.app.send(CMD_CONNECTOR_LOG, message);
-      } catch (error) {
-        console.warn('[EzyConnector] failed to send connector log', error);
-      }
     }
   }
 

@@ -4,8 +4,15 @@
   "version": "0.1.0",
   "description": "__MSG_extensionDescription__",
   "default_locale": "vi",
-  "permissions": ["storage", "scripting", "tabs", "cookies"],
-  "host_permissions": ["<all_urls>"],
+  "permissions": ["storage", "scripting", "cookies"],
+  "host_permissions": [
+    "https://oa.zalo.me/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },

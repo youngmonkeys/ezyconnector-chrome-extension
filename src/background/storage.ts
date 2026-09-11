@@ -2,6 +2,7 @@ import { AdminCredentials, ConnectionConfig } from './types';
 
 const CREDENTIALS_KEY = 'ezyConnectorCredentials';
 const CONNECTION_KEY = 'ezyConnectorConnection';
+const DATA_CONSENT_KEY = 'ezyConnectorDataConsent';
 
 export async function getCredentials(): Promise<AdminCredentials | null> {
   const result = await chrome.storage.local.get(CREDENTIALS_KEY);
@@ -23,6 +24,15 @@ export async function saveConnection(config: ConnectionConfig): Promise<void> {
 
 export async function clearConnection(): Promise<void> {
   await chrome.storage.local.remove(CONNECTION_KEY);
+}
+
+export async function hasDataConsent(): Promise<boolean> {
+  const result = await chrome.storage.local.get(DATA_CONSENT_KEY);
+  return result[DATA_CONSENT_KEY] === true;
+}
+
+export async function setDataConsent(accepted: boolean): Promise<void> {
+  await chrome.storage.local.set({ [DATA_CONSENT_KEY]: accepted });
 }
 
 export function onConnectionChanged(callback: (config: ConnectionConfig | null) => void): void {

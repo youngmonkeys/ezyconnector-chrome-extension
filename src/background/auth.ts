@@ -2,7 +2,31 @@ const COOKIE_NAME_ADMIN_ACCESS_TOKEN = 'adminAccessToken';
 const SETTING_NAME_WEBSOCKET_URL = 'websocket_url';
 
 function normalizeBaseUrl(adminUrl: string): string {
-  return adminUrl.trim().replace(/\/+$/, '');
+  const url = new URL(adminUrl.trim());
+  const isLocal = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+  if (url.protocol !== 'https:' && !(isLocal && url.protocol === 'http:')) {
+    throw new Error('Admin URL phải sử dụng HTTPS (chỉ localhost được phép dùng HTTP)');
+  }
+  url.pathname = url.pathname.replace(/\/+$/, '');
+  url.search = '';
+  url.hash = '';
+  return url.toString().replace(/\/+$/, '');
+}
+
+export function normalizeImageOrigins(values: unknown): string[] {
+  if (!Array.isArray(values)) {
+    throw new Error('Danh sách domain ảnh không hợp lệ');
+  }
+  return Array.from(new Set(values.map((value, index) => {
+    if (typeof value !== 'string') {
+      throw new Error(`Domain ảnh thứ ${index + 1} không hợp lệ`);
+    }
+    const url = new URL(value.trim());
+    if (url.protocol !== 'https:') {
+      throw new Error(`Domain ảnh phải sử dụng HTTPS: ${value}`);
+    }
+    return url.origin;
+  })));
 }
 
 export async function loginAdmin(
@@ -51,5 +75,10 @@ export async function fetchWebsocketUrl(adminUrl: string, token: string): Promis
   if (!wsUrl) {
     throw new Error('Server chưa cấu hình websocket_url');
   }
-  return wsUrl;
+  const parsedWsUrl = new URL(wsUrl);
+  const isLocal = parsedWsUrl.hostname === 'localhost' || parsedWsUrl.hostname === '127.0.0.1';
+  if (parsedWsUrl.protocol !== 'wss:' && !(isLocal && parsedWsUrl.protocol === 'ws:')) {
+    throw new Error('WebSocket URL phải sử dụng WSS (chỉ localhost được phép dùng WS)');
+  }
+  return parsedWsUrl.toString();
 }

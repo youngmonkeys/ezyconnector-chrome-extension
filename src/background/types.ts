@@ -11,23 +11,15 @@ export interface EzyResponseMessage {
   error?: string;
 }
 
-export interface ConnectorLogMessage {
-  requestId: string;
-  status: string;
-  workflowVersion?: number;
-  stepIndex?: number;
-  command?: string;
-  durationMs?: number;
-  error?: string;
-}
-
 export interface AdminCredentials {
   adminUrl: string;
   username: string;
+  allowedImageOrigins: string[];
 }
 
 export interface ConnectionConfig {
   adminUrl: string;
   wsUrl: string;
   token: string;
+  allowedImageOrigins: string[];
 }

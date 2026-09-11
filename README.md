@@ -1,30 +1,36 @@
 # EzyConnector
 
-Chrome extension (Manifest V3) kết nối tới hệ thống sử dụng EzyPlatform thông qua WebSocket,
-nhận các yêu cầu (request) từ server và thực thi trực tiếp trên trình duyệt.
+Chrome extension (Manifest V3) kết nối EzyPlatform với Zalo OA thông qua WebSocket. Extension
+nhận dữ liệu thông báo và thực hiện duy nhất tác vụ gửi tin nhắn hoặc hình ảnh trên Zalo OA.
 
 ## Kiến trúc
 
-- `src/background/index.ts` — service worker: khởi tạo/duy trì kết nối WebSocket, dispatch request đến handler tương ứng, gửi response ngược lại server.
+- `src/background/index.ts` — service worker: khởi tạo/duy trì kết nối WebSocket và gửi kết quả ngược lại server.
 - `src/background/websocket-client.ts` — client WebSocket có tự động reconnect (exponential backoff).
-- `src/background/dispatcher.ts` — định tuyến request theo `type` tới handler xử lý.
-- `src/background/commands/` — registry các command độc lập nền tảng và bộ thực thi workflow.
-- `src/background/handlers/dom-automation.ts` — các action `dom.*` (đọc HTML/text, click, điền form) chạy trên tab qua `chrome.scripting.executeScript`.
-- `src/background/handlers/http-proxy.ts` — action `http.request`, thực hiện fetch thay server (dùng cookie/session của trình duyệt).
+- `src/background/dispatcher.ts` — chỉ chấp nhận tác vụ cố định `zaloOa.sendMessage`.
+- `src/background/handlers/notification.ts` — triển khai luồng gửi thông báo cố định trên `oa.zalo.me`.
 - `src/popup/` — popup cấu hình WebSocket URL + token, hiển thị trạng thái kết nối.
 
 ## Giao thức message
 
-Server gửi xuống:
+Server gửi xuống dữ liệu cho tác vụ cố định:
 
 ```json
-{ "id": "req-1", "type": "dom.getText", "payload": { "selector": "#title" } }
+{
+  "id": "req-1",
+  "type": "zaloOa.sendMessage",
+  "payload": {
+    "zaloOaUserId": "123",
+    "message": "Xin chào",
+    "imageUrls": ["https://admin.example.com/images/example.jpg"]
+  }
+}
 ```
 
 Extension trả về:
 
 ```json
-{ "id": "req-1", "ok": true, "data": "Nội dung..." }
+{ "id": "req-1", "ok": true, "data": { "sent": true } }
 ```
 
 hoặc khi lỗi:
@@ -33,80 +39,9 @@ hoặc khi lỗi:
 { "id": "req-1", "ok": false, "error": "message lỗi" }
 ```
 
-### Các `type` hỗ trợ sẵn
-
-- `dom.getHtml` — trả về `document.documentElement.outerHTML` của tab (mặc định tab đang active, hoặc truyền `tabId`).
-- `dom.getText` — `payload.selector`, trả `textContent` của phần tử.
-- `dom.click` — `payload.selector`, click vào phần tử.
-- `dom.fill` — `payload.selector`, `payload.value`, điền giá trị vào input/textarea.
-- `http.request` — `payload.url`, `payload.method`, `payload.headers`, `payload.body`.
-
-Thêm action mới bằng cách bổ sung handler trong `src/background/handlers/` và route trong `dispatcher.ts`.
-
-## Workflow command
-
-Server có thể gửi một kịch bản gồm các command nguyên tử. Extension chỉ thực thi các command
-đã đăng ký, không nhận hoặc chạy JavaScript tùy ý:
-
-```json
-{
-  "id": "req-2",
-  "type": "workflow.execute",
-  "payload": {
-    "version": 1,
-    "input": { "userId": "123", "message": "Xin chào" },
-    "commands": [
-      {
-        "name": "tab.ensure",
-        "args": {
-          "url": "https://oa.zalo.me/chat",
-          "urlPattern": "https://oa.zalo.me/*"
-        },
-        "saveAs": "chatTab"
-      },
-      {
-        "name": "dom.fill",
-        "args": {
-          "tabId": "${chatTab.id}",
-          "selector": ".func_search input[type='search']",
-          "value": "${input.userId}"
-        }
-      },
-      {
-        "name": "dom.wait",
-        "args": {
-          "tabId": "${chatTab.id}",
-          "selector": ".item_mess:not(.mess_links)",
-          "timeoutMs": 10000
-        }
-      },
-      {
-        "name": "dom.click",
-        "args": {
-          "tabId": "${chatTab.id}",
-          "selector": ".item_mess:not(.mess_links)"
-        }
-      }
-    ]
-  }
-}
-```
-
-Biến lưu bằng `saveAs` và dữ liệu trong `input` có thể được tham chiếu qua cú pháp
-`${variable.path}`. Các command hiện có: `flow.delay`, `tab.ensure`, `dom.getHtml`, `dom.getText`,
-`dom.wait`, `dom.click`, `dom.fill`, `dom.keypress`, `dom.uploadRemoteFiles` và
-`http.request`. Workflow tối đa 100 command; thời gian chờ của một command tối đa 60 giây.
-
-Chèn một khoảng nghỉ giữa hai bước bằng command:
-
-```json
-{
-  "name": "flow.delay",
-  "args": {
-    "durationMs": 500
-  }
-}
-```
+Các selector, thứ tự thao tác và logic gửi Zalo OA đều nằm trong package extension. Server không
+thể gửi selector, URL đích, HTTP request hoặc workflow tùy ý. URL ảnh phải dùng HTTPS và thuộc
+Admin URL hoặc danh sách origin ảnh mà người dùng nhập và chủ động cấp quyền khi đăng nhập.
 
 ## Cài đặt & build
 

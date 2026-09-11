@@ -1,6 +1,7 @@
 interface AdminCredentials {
   adminUrl: string;
   username: string;
+  allowedImageOrigins?: string[];
 }
 
 const CREDENTIALS_KEY = 'ezyConnectorCredentials';
@@ -10,6 +11,10 @@ const form = document.getElementById('config-form') as HTMLFormElement;
 const adminUrlInput = document.getElementById('admin-url') as HTMLInputElement;
 const usernameInput = document.getElementById('username') as HTMLInputElement;
 const passwordInput = document.getElementById('password') as HTMLInputElement;
+const allowedImageOriginsInput = document.getElementById(
+  'allowed-image-origins',
+) as HTMLTextAreaElement;
+const dataConsentInput = document.getElementById('data-consent') as HTMLInputElement;
 const loginBtn = document.getElementById('login-btn') as HTMLButtonElement;
 const disconnectBtn = document.getElementById('disconnect-btn') as HTMLButtonElement;
 const statusDot = document.getElementById('status-dot') as HTMLElement;
@@ -29,6 +34,7 @@ async function loadCredentials(): Promise<void> {
   if (credentials) {
     adminUrlInput.value = credentials.adminUrl ?? '';
     usernameInput.value = credentials.username ?? '';
+    allowedImageOriginsInput.value = (credentials.allowedImageOrigins ?? []).join('\n');
   }
 }
 
@@ -55,17 +61,60 @@ function clearError(): void {
   errorMessage.textContent = '';
 }
 
+function requestedOriginPattern(origin: string): string {
+  const url = new URL(origin);
+  return `${url.protocol}//${url.hostname}/*`;
+}
+
+function normalizeAdminOrigin(adminUrl: string): string {
+  const url = new URL(adminUrl);
+  const isLocal = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+  if (url.protocol !== 'https:' && !(isLocal && url.protocol === 'http:')) {
+    throw new Error('Admin URL phải sử dụng HTTPS (chỉ localhost được phép dùng HTTP)');
+  }
+  return url.origin;
+}
+
+function parseImageOrigins(value: string): string[] {
+  const values = value
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return Array.from(new Set(values.map((value) => {
+    const url = new URL(value);
+    if (url.protocol !== 'https:') {
+      throw new Error(`Domain ảnh phải sử dụng HTTPS: ${value}`);
+    }
+    return url.origin;
+  })));
+}
+
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
   clearError();
   loginBtn.disabled = true;
   loginBtn.textContent = 'Đang đăng nhập...';
   try {
+    if (!dataConsentInput.checked) {
+      throw new Error('Bạn cần đồng ý cho extension xử lý dữ liệu để tiếp tục');
+    }
+    const adminOrigin = normalizeAdminOrigin(adminUrlInput.value.trim());
+    const allowedImageOrigins = parseImageOrigins(allowedImageOriginsInput.value);
+    const requestedOrigins = Array.from(new Set([
+      adminOrigin,
+      ...allowedImageOrigins,
+    ])).map(requestedOriginPattern);
+    const granted = await chrome.permissions.request({ origins: requestedOrigins });
+    if (!granted) {
+      throw new Error('Cần cấp quyền truy cập domain EzyPlatform để đăng nhập và kết nối');
+    }
     const response = await chrome.runtime.sendMessage({
       type: 'login',
       adminUrl: adminUrlInput.value.trim(),
       username: usernameInput.value.trim(),
       password: passwordInput.value,
+      consentAccepted: true,
+      allowedImageOrigins,
     });
     if (response?.ok) {
       passwordInput.value = '';

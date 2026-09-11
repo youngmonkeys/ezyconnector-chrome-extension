@@ -1,11 +1,7 @@
-export interface NotificationPayload {
-  targetType?: string;
-  data?: {
-    zaloOaUserId?: string;
-    message?: string;
-    imageUrls?: string[];
-    [key: string]: unknown;
-  };
+export interface ZaloOaSendMessagePayload {
+  zaloOaUserId?: string;
+  message?: string;
+  imageUrls?: string[];
 }
 
 const ZALO_OA_TAB_URL_PATTERN = 'https://oa.zalo.me/*';
@@ -21,11 +17,23 @@ const ZALO_OA_IMAGE_BUTTON_SELECTOR =
   '.upload-container.chat_item.chat_message_instant .icon_image';
 const ZALO_OA_IMAGE_INPUT_WAIT_MS = 5000;
 const ZALO_OA_LOG_PREFIX = '[EzyConnector][ZaloOA]';
+const MAX_MESSAGE_LENGTH = 5000;
+const MAX_IMAGES = 10;
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const MIN_STEP_DELAY_MS = 350;
+const MAX_STEP_DELAY_MS = 900;
 
 interface DownloadedImage {
   base64: string;
   name: string;
   type: string;
+}
+
+function randomStepDelay(): Promise<void> {
+  const durationMs = Math.floor(
+    Math.random() * (MAX_STEP_DELAY_MS - MIN_STEP_DELAY_MS + 1),
+  ) + MIN_STEP_DELAY_MS;
+  return new Promise((resolve) => setTimeout(resolve, durationMs));
 }
 
 function openZaloOaTab(): Promise<number> {
@@ -83,9 +91,20 @@ function imageNameFromUrl(imageUrl: string, index: number, type: string): string
   return `image-${index + 1}.${extension}`;
 }
 
-async function downloadImages(imageUrls: string[], runId: string): Promise<DownloadedImage[]> {
+async function downloadImages(
+  imageUrls: string[],
+  adminOrigin: string,
+  allowedImageOrigins: string[],
+  runId: string,
+): Promise<DownloadedImage[]> {
+  const approvedOrigins = new Set([adminOrigin, ...allowedImageOrigins]);
   return Promise.all(imageUrls.map(async (imageUrl, index) => {
     const safeImageUrl = new URL(imageUrl);
+    if (safeImageUrl.protocol !== 'https:' || !approvedOrigins.has(safeImageUrl.origin)) {
+      throw new Error(
+        `imageUrls[${index}] must use HTTPS and belong to an approved image origin`,
+      );
+    }
     console.info(
       ZALO_OA_LOG_PREFIX,
       runId,
@@ -99,6 +118,9 @@ async function downloadImages(imageUrls: string[], runId: string): Promise<Downl
     const blob = await response.blob();
     if (!blob.type.startsWith('image/')) {
       throw new Error(`URL does not return an image: ${imageUrl}`);
+    }
+    if (blob.size > MAX_IMAGE_BYTES) {
+      throw new Error(`Image ${index + 1} exceeds the ${MAX_IMAGE_BYTES} byte limit`);
     }
     console.info(
       ZALO_OA_LOG_PREFIX,
@@ -123,6 +145,7 @@ async function sendZaloOaMessage(
   console.info(ZALO_OA_LOG_PREFIX, runId, 'finding Zalo OA tab');
   const tabId = await ensureZaloOaTabId();
   console.info(ZALO_OA_LOG_PREFIX, runId, 'using Zalo OA tab', { tabId });
+  await randomStepDelay();
 
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId },
@@ -139,6 +162,8 @@ async function sendZaloOaMessage(
       messageContent: string | undefined,
       downloadedImages: DownloadedImage[],
       executionId: string,
+      minStepDelayMs: number,
+      maxStepDelayMs: number,
     ): Promise<SearchAndSelectResult> => {
       const logPrefix = '[EzyConnector][ZaloOA]';
       const log = (step: string, details?: unknown): void => {
@@ -162,6 +187,14 @@ async function sendZaloOaMessage(
         return found;
       }
 
+      async function waitRandom(step: string): Promise<void> {
+        const durationMs = Math.floor(
+          Math.random() * (maxStepDelayMs - minStepDelayMs + 1),
+        ) + minStepDelayMs;
+        log('waiting before step', { step, durationMs });
+        await new Promise((resolve) => setTimeout(resolve, durationMs));
+      }
+
       log('page automation started', {
         hasMessage: Boolean(messageContent),
         imageCount: downloadedImages.length,
@@ -176,11 +209,12 @@ async function sendZaloOaMessage(
         window.HTMLInputElement.prototype,
         'value',
       )?.set;
+      await waitRandom('fill recipient search');
       input.focus();
       nativeValueSetter?.call(input, '');
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await waitRandom('enter recipient id');
       nativeValueSetter?.call(input, userId);
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
@@ -192,6 +226,7 @@ async function sendZaloOaMessage(
         return { filled: true, selected: false, messageFilled: false, sent: false, imagesSelected: 0 };
       }
 
+      await waitRandom('select recipient');
       firstResult.click();
       log('search result clicked', {
         className: firstResult.className,
@@ -203,6 +238,7 @@ async function sendZaloOaMessage(
         log('message input is unavailable after selecting user');
         return { filled: true, selected: true, messageFilled: false, sent: false, imagesSelected: 0 };
       }
+      await waitRandom('prepare conversation');
       log('conversation input is ready');
 
       let imagesSelected = 0;
@@ -216,6 +252,7 @@ async function sendZaloOaMessage(
         }
 
         if (imageButtonFound) {
+          await waitRandom('open image picker');
           log('installing temporary file input hook');
           imagesSelected = await new Promise<number>((resolve) => {
             const originalClick = window.HTMLInputElement.prototype.click;
@@ -260,13 +297,14 @@ async function sendZaloOaMessage(
           });
         }
         if (imagesSelected > 0) {
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          await waitRandom('wait for selected images');
         }
       }
 
       let messageFilled = false;
       let sent = imagesSelected > 0;
       if (messageContent) {
+        await waitRandom('fill message');
         const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(
           window.HTMLTextAreaElement.prototype,
           'value',
@@ -275,6 +313,7 @@ async function sendZaloOaMessage(
         messageInput.dispatchEvent(new Event('input', { bubbles: true }));
         messageInput.dispatchEvent(new Event('change', { bubbles: true }));
         messageInput.focus();
+        await waitRandom('send message');
         messageInput.dispatchEvent(new KeyboardEvent('keydown', {
           key: 'Enter',
           code: 'Enter',
@@ -316,6 +355,8 @@ async function sendZaloOaMessage(
       message,
       images,
       runId,
+      MIN_STEP_DELAY_MS,
+      MAX_STEP_DELAY_MS,
     ],
     world: 'MAIN',
   });
@@ -323,18 +364,27 @@ async function sendZaloOaMessage(
   return result as SearchAndSelectResult;
 }
 
-export async function handleNotification(payload: NotificationPayload): Promise<unknown> {
-  if (payload?.targetType !== 'ZALO_OA') {
-    return null;
-  }
-
-  const zaloOaUserId = payload.data?.zaloOaUserId;
-  if (!zaloOaUserId) {
+export async function handleZaloOaSendMessage(
+  payload: ZaloOaSendMessagePayload,
+  adminOrigin: string,
+  allowedImageOrigins: string[],
+): Promise<unknown> {
+  const zaloOaUserId = payload.zaloOaUserId?.trim();
+  if (!zaloOaUserId || zaloOaUserId.length > 255) {
     throw new Error('zaloOaUserId is missing in notification payload');
   }
 
-  const message = payload.data?.message?.trim() || undefined;
-  const imageUrls = payload.data?.imageUrls ?? [];
+  const message = payload.message?.trim() || undefined;
+  if (message && message.length > MAX_MESSAGE_LENGTH) {
+    throw new Error(`message must not exceed ${MAX_MESSAGE_LENGTH} characters`);
+  }
+  const imageUrls = payload.imageUrls ?? [];
+  if (!Array.isArray(imageUrls) || imageUrls.length > MAX_IMAGES) {
+    throw new Error(`imageUrls must contain at most ${MAX_IMAGES} items`);
+  }
+  if (imageUrls.some((url) => typeof url !== 'string')) {
+    throw new Error('Every imageUrls item must be a string');
+  }
   if (!message && !imageUrls.length) {
     throw new Error('message or imageUrls is required in notification payload');
   }
@@ -347,7 +397,12 @@ export async function handleNotification(payload: NotificationPayload): Promise<
   });
 
   try {
-    const images = await downloadImages(imageUrls, runId);
+    const images = await downloadImages(
+      imageUrls,
+      adminOrigin,
+      allowedImageOrigins,
+      runId,
+    );
     const result = await sendZaloOaMessage(zaloOaUserId, message, images, runId);
     if (!result.selected) {
       console.warn(
