@@ -1,12 +1,17 @@
 import esbuild from 'esbuild';
 import { cp, mkdir } from 'node:fs/promises';
 import { watch as watchFile } from 'node:fs';
+import { dirname } from 'node:path';
 
 const watch = process.argv.includes('--watch');
 
 const staticFiles = [
   ['manifest.json', 'dist/manifest.json'],
   ['_locales', 'dist/_locales'],
+  ['assets/icons/icon16.png', 'dist/icons/icon16.png'],
+  ['assets/icons/icon32.png', 'dist/icons/icon32.png'],
+  ['assets/icons/icon48.png', 'dist/icons/icon48.png'],
+  ['assets/icons/icon128.png', 'dist/icons/icon128.png'],
   ['src/popup/popup.html', 'dist/popup.html'],
   ['src/popup/popup.css', 'dist/popup.css'],
 ];
@@ -14,6 +19,7 @@ const staticFiles = [
 async function copyStatic() {
   await mkdir('dist', { recursive: true });
   for (const [src, dest] of staticFiles) {
+    await mkdir(dirname(dest), { recursive: true });
     await cp(src, dest, { recursive: true });
   }
 }
