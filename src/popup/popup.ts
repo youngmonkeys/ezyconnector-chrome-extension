@@ -10,11 +10,13 @@ const CONNECTION_KEY = 'ezyConnectorConnection';
 const form = document.getElementById('config-form') as HTMLFormElement;
 const adminUrlInput = document.getElementById('admin-url') as HTMLInputElement;
 const usernameInput = document.getElementById('username') as HTMLInputElement;
+const passwordField = document.getElementById('password-field') as HTMLLabelElement;
 const passwordInput = document.getElementById('password') as HTMLInputElement;
 const allowedImageOriginsInput = document.getElementById(
   'allowed-image-origins',
 ) as HTMLTextAreaElement;
 const dataConsentInput = document.getElementById('data-consent') as HTMLInputElement;
+const dataConsentField = document.getElementById('data-consent-field') as HTMLLabelElement;
 const loginBtn = document.getElementById('login-btn') as HTMLButtonElement;
 const disconnectBtn = document.getElementById('disconnect-btn') as HTMLButtonElement;
 const statusDot = document.getElementById('status-dot') as HTMLElement;
@@ -41,6 +43,14 @@ async function loadCredentials(): Promise<void> {
 function renderStatus(status: string): void {
   statusDot.className = `dot ${status}`;
   statusText.textContent = STATUS_LABELS[status] ?? status;
+
+  const connected = status === 'connected';
+  passwordField.hidden = connected;
+  passwordInput.disabled = connected;
+  dataConsentField.hidden = connected;
+  dataConsentInput.disabled = connected;
+  loginBtn.hidden = connected;
+  loginBtn.disabled = connected;
 }
 
 function refreshStatus(): void {
