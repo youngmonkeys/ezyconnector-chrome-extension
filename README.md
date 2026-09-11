@@ -48,6 +48,10 @@ Kết quả có thể lưu bằng `saveAs` rồi tham chiếu ở command sau th
 Command `delay` nhận một `durationMs` cố định hoặc khoảng `minDurationMs`/`maxDurationMs`.
 `dom.fill` hỗ trợ khoảng delay trước khi gõ và giữa từng ký tự.
 
+Mỗi workflow và command được ghi log với prefix `[EzyConnector][Workflow]`, bao gồm request ID,
+step index, thời gian bắt đầu, duration thực tế và delay được chọn. Log không chứa nội dung tin
+nhắn hay URL file. Xem log tại service worker của extension trong `chrome://extensions`.
+
 ## Cài đặt & build
 
 ```bash

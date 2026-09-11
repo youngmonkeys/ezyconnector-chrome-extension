@@ -25,18 +25,9 @@
           Mật khẩu
           <input id="password" type="password" placeholder="Password" required autocomplete="current-password" />
         </label>
-        <label>
-          Domain ảnh được phép
-          <textarea id="allowed-image-origins" rows="3" placeholder="https://youngmonkeys.org&#10;https://cdn.example.com"></textarea>
-          <small>Mỗi dòng một origin HTTPS. Domain Admin luôn được phép.</small>
-        </label>
-        <label id="data-consent-field" class="consent">
-          <input id="data-consent" type="checkbox" required />
-          <span>Tôi đồng ý để EzyConnector nhận thông tin người nhận, nội dung và ảnh từ EzyPlatform, sau đó thao tác trên Zalo OA để gửi tin nhắn.</span>
-        </label>
         <p id="error-message" class="error" hidden></p>
         <div class="actions">
-          <button type="submit" id="login-btn" disabled>Đăng nhập &amp; Kết nối</button>
+          <button type="submit" id="login-btn">Đăng nhập &amp; Kết nối</button>
           <button type="button" id="disconnect-btn">Ngắt kết nối</button>
         </div>
       </form>

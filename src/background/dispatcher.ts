@@ -3,18 +3,12 @@ import { EzyRequestMessage, EzyResponseMessage, WorkflowPayload } from './types'
 
 export async function dispatch(
   message: EzyRequestMessage,
-  adminOrigin: string,
-  allowedImageOrigins: string[],
 ): Promise<EzyResponseMessage> {
   try {
     if (message.type !== 'workflow.execute') {
       throw new Error(`Unknown request type: ${message.type}`);
     }
-    const data = await executeWorkflow(
-      message.payload as WorkflowPayload,
-      adminOrigin,
-      allowedImageOrigins,
-    );
+    const data = await executeWorkflow(message.id, message.payload as WorkflowPayload);
     return { id: message.id, ok: true, data };
   } catch (error) {
     return {

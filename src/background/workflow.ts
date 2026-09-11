@@ -3,8 +3,8 @@ import { WorkflowCommand, WorkflowPayload } from './types';
 type Values = Record<string, unknown>;
 type CommandHandler = (args: Values) => Promise<unknown>;
 const handlers = new Map<string, CommandHandler>();
+const LOG_PREFIX = '[EzyConnector][Workflow]';
 interface DownloadedFile { base64: string; name: string; type: string }
-let permittedDownloadOrigins = new Set<string>();
 
 function requiredString(args: Values, name: string): string {
   const value = args[name];
@@ -75,8 +75,19 @@ handlers.set('delay', async (args) => {
     Math.floor(Math.random() * (maximum - minimum + 1)) + minimum,
     60000,
   );
+  const startedAt = Date.now();
+  console.info(LOG_PREFIX, 'delay started', {
+    minDurationMs: minimum,
+    maxDurationMs: maximum,
+    selectedDurationMs: durationMs,
+  });
   await new Promise((resolve) => setTimeout(resolve, durationMs));
-  return { durationMs };
+  const actualDurationMs = Date.now() - startedAt;
+  console.info(LOG_PREFIX, 'delay completed', {
+    selectedDurationMs: durationMs,
+    actualDurationMs,
+  });
+  return { durationMs, actualDurationMs };
 });
 
 async function runDom(args: Values, action: string): Promise<unknown> {
@@ -174,9 +185,7 @@ handlers.set('dom.uploadRemoteFiles', async (args) => {
   }
   const files: DownloadedFile[] = await Promise.all(urls.map(async (rawUrl, index) => {
     const url = new URL(rawUrl as string);
-    if (url.protocol !== 'https:' || !permittedDownloadOrigins.has(url.origin)) {
-      throw new Error(`File URL is not permitted: ${url.origin}`);
-    }
+    if (url.protocol !== 'https:') throw new Error(`File URL must use HTTPS: ${url.origin}`);
     const response = await fetch(url.toString());
     if (!response.ok) throw new Error(`Could not download file (HTTP ${response.status})`);
     const blob = await response.blob();
@@ -264,25 +273,88 @@ function resolve(value: unknown, outputs: Values): unknown {
 }
 
 export async function executeWorkflow(
+  requestId: string,
   payload: WorkflowPayload,
-  adminOrigin: string,
-  allowedImageOrigins: string[],
 ): Promise<Values> {
   if (!payload || payload.version !== 1 || !Array.isArray(payload.commands)) {
     throw new Error('Invalid workflow payload or unsupported version');
   }
   if (payload.commands.length > 100) throw new Error('Workflow exceeds 100 commands');
-  permittedDownloadOrigins = new Set([adminOrigin, ...allowedImageOrigins]);
   const outputs: Values = {};
+  const workflowStartedAt = Date.now();
+  console.info(LOG_PREFIX, 'workflow started', {
+    requestId,
+    version: payload.version,
+    commandCount: payload.commands.length,
+    startedAt: new Date(workflowStartedAt).toISOString(),
+  });
   for (const [index, command] of payload.commands.entries()) {
     validateCommand(command, index);
     const handler = handlers.get(command.name);
     if (!handler) throw new Error(`Unknown command: ${command.name}`);
-    outputs[command.saveAs ?? String(index)] = await handler(
-      resolve(command.args ?? {}, outputs) as Values,
-    );
+    const args = resolve(command.args ?? {}, outputs) as Values;
+    const commandStartedAt = Date.now();
+    console.info(LOG_PREFIX, 'command started', {
+      requestId,
+      stepIndex: index,
+      command: command.name,
+      saveAs: command.saveAs,
+      args: summarizeArgs(command.name, args),
+      startedAt: new Date(commandStartedAt).toISOString(),
+      elapsedSinceWorkflowStartMs: commandStartedAt - workflowStartedAt,
+    });
+    try {
+      const result = await handler(args);
+      outputs[command.saveAs ?? String(index)] = result;
+      console.info(LOG_PREFIX, 'command completed', {
+        requestId,
+        stepIndex: index,
+        command: command.name,
+        durationMs: Date.now() - commandStartedAt,
+        elapsedSinceWorkflowStartMs: Date.now() - workflowStartedAt,
+        result: summarizeResult(command.name, result),
+      });
+    } catch (error) {
+      console.error(LOG_PREFIX, 'command failed', {
+        requestId,
+        stepIndex: index,
+        command: command.name,
+        durationMs: Date.now() - commandStartedAt,
+        elapsedSinceWorkflowStartMs: Date.now() - workflowStartedAt,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   }
+  console.info(LOG_PREFIX, 'workflow completed', {
+    requestId,
+    durationMs: Date.now() - workflowStartedAt,
+    commandCount: payload.commands.length,
+  });
   return outputs;
+}
+
+function summarizeArgs(command: string, args: Values): Values {
+  const summary: Values = {};
+  for (const key of [
+    'tabId', 'url', 'urlPattern', 'selector', 'triggerSelector', 'timeoutMs',
+    'durationMs', 'minDurationMs', 'maxDurationMs', 'minBeforeTypeDelayMs',
+    'maxBeforeTypeDelayMs', 'minCharacterDelayMs', 'maxCharacterDelayMs', 'key',
+  ]) {
+    if (args[key] !== undefined) summary[key] = args[key];
+  }
+  if (command === 'dom.fill') summary.valueLength = String(args.value ?? '').length;
+  if (command === 'dom.uploadRemoteFiles') {
+    summary.fileCount = Array.isArray(args.urls) ? args.urls.length : 0;
+  }
+  return summary;
+}
+
+function summarizeResult(command: string, result: unknown): unknown {
+  if (command === 'dom.uploadRemoteFiles' || command === 'delay' || command.startsWith('tab.')) {
+    return result;
+  }
+  return result && typeof result === 'object' ? result : undefined;
 }
 
 function validateCommand(command: WorkflowCommand, index: number): void {

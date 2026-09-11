@@ -13,22 +13,6 @@ function normalizeBaseUrl(adminUrl: string): string {
   return url.toString().replace(/\/+$/, '');
 }
 
-export function normalizeImageOrigins(values: unknown): string[] {
-  if (!Array.isArray(values)) {
-    throw new Error('Danh sách domain ảnh không hợp lệ');
-  }
-  return Array.from(new Set(values.map((value, index) => {
-    if (typeof value !== 'string') {
-      throw new Error(`Domain ảnh thứ ${index + 1} không hợp lệ`);
-    }
-    const url = new URL(value.trim());
-    if (url.protocol !== 'https:') {
-      throw new Error(`Domain ảnh phải sử dụng HTTPS: ${value}`);
-    }
-    return url.origin;
-  })));
-}
-
 export async function loginAdmin(
   adminUrl: string,
   username: string,

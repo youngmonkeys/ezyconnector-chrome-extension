@@ -25,12 +25,10 @@ export interface WorkflowPayload {
 export interface AdminCredentials {
   adminUrl: string;
   username: string;
-  allowedImageOrigins: string[];
 }
 
 export interface ConnectionConfig {
   adminUrl: string;
   wsUrl: string;
   token: string;
-  allowedImageOrigins: string[];
 }

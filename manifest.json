@@ -6,11 +6,6 @@
   "default_locale": "vi",
   "permissions": ["storage", "scripting", "cookies"],
   "host_permissions": ["<all_urls>"],
-  "optional_host_permissions": [
-    "https://*/*",
-    "http://localhost/*",
-    "http://127.0.0.1/*"
-  ],
   "background": {
     "service_worker": "background.js"
   },
