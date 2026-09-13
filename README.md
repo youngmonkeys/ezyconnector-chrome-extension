@@ -46,6 +46,7 @@ Các command hiện có: `tab.ensure`, `tab.create`, `tab.update`, `tab.reload`,
 `dom.wait`, `dom.click`, `dom.fill`, `dom.keypress`, `dom.uploadRemoteFiles` và `delay`.
 Kết quả có thể lưu bằng `saveAs` rồi tham chiếu ở command sau theo cú pháp `${name.field}`.
 Command `delay` nhận một `durationMs` cố định hoặc khoảng `minDurationMs`/`maxDurationMs`.
+Nên truyền `tabId` để timer chạy trong tab, tránh timer service worker bị Chrome trì hoãn.
 `dom.fill` hỗ trợ khoảng delay trước khi gõ và giữa từng ký tự.
 
 Mỗi workflow và command được ghi log với prefix `[EzyConnector][Workflow]`, bao gồm request ID,

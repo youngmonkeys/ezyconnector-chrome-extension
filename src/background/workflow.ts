@@ -77,15 +77,27 @@ handlers.set('delay', async (args) => {
   );
   const startedAt = Date.now();
   console.info(LOG_PREFIX, 'delay started', {
+    timerContext: Number.isInteger(args.tabId) ? 'tab' : 'service-worker',
+    tabId: args.tabId,
     minDurationMs: minimum,
     maxDurationMs: maximum,
     selectedDurationMs: durationMs,
   });
-  await new Promise((resolve) => setTimeout(resolve, durationMs));
+  if (Number.isInteger(args.tabId)) {
+    await chrome.scripting.executeScript({
+      target: { tabId: args.tabId as number },
+      world: 'MAIN',
+      func: (delayMs) => new Promise((resolve) => window.setTimeout(resolve, delayMs)),
+      args: [durationMs],
+    });
+  } else {
+    await new Promise((resolve) => setTimeout(resolve, durationMs));
+  }
   const actualDurationMs = Date.now() - startedAt;
   console.info(LOG_PREFIX, 'delay completed', {
     selectedDurationMs: durationMs,
     actualDurationMs,
+    timerContext: Number.isInteger(args.tabId) ? 'tab' : 'service-worker',
   });
   return { durationMs, actualDurationMs };
 });
@@ -185,7 +197,10 @@ handlers.set('dom.uploadRemoteFiles', async (args) => {
   }
   const files: DownloadedFile[] = await Promise.all(urls.map(async (rawUrl, index) => {
     const url = new URL(rawUrl as string);
-    if (url.protocol !== 'https:') throw new Error(`File URL must use HTTPS: ${url.origin}`);
+    const isLocalhost = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && isLocalhost)) {
+      throw new Error(`File URL must use HTTPS: ${url.origin}`);
+    }
     const response = await fetch(url.toString());
     if (!response.ok) throw new Error(`Could not download file (HTTP ${response.status})`);
     const blob = await response.blob();
