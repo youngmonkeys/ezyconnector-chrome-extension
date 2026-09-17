@@ -34,14 +34,28 @@ async function waitForTab(tab: chrome.tabs.Tab, timeoutMs: number): Promise<chro
   });
 }
 
+function isAtUrl(tabUrl: string | undefined, url: string): boolean {
+  return tabUrl === url || tabUrl?.startsWith(`${url}?`) === true || tabUrl?.startsWith(`${url}#`) === true;
+}
+
 handlers.set('tab.ensure', async (args) => {
   const url = requiredString(args, 'url');
   const tabs = await chrome.tabs.query({
     url: typeof args.urlPattern === 'string' ? args.urlPattern : url,
   });
-  const tab = tabs[0] ?? await chrome.tabs.create({ url, active: args.active !== false });
+  const matched = tabs.find((candidate) => isAtUrl(candidate.url, url)) ?? tabs[0];
+  let tab: chrome.tabs.Tab;
+  if (!matched) {
+    tab = await chrome.tabs.create({ url, active: args.active !== false });
+  } else if (matched.id === undefined) {
+    throw new Error('Could not create or find tab');
+  } else if (isAtUrl(matched.url, url)) {
+    tab = matched;
+  } else {
+    tab = await chrome.tabs.update(matched.id, { url });
+  }
   if (tab.id === undefined) throw new Error('Could not create or find tab');
-  if (tabs[0] && args.active !== false) {
+  if (args.active !== false) {
     await chrome.windows.update(tab.windowId, { focused: true });
     await chrome.tabs.update(tab.id, { active: true });
   }
