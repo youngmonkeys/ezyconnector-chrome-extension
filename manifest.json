@@ -4,7 +4,7 @@
   "version": "0.0.1",
   "description": "__MSG_extensionDescription__",
   "default_locale": "vi",
-  "permissions": ["storage", "scripting", "cookies"],
+  "permissions": ["storage", "scripting", "cookies", "alarms"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"

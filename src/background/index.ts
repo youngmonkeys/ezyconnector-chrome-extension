@@ -10,6 +10,8 @@ import {
 import { fetchWebsocketUrl, loginAdmin } from './auth';
 import { EzyRequestMessage } from './types';
 
+const KEEP_ALIVE_ALARM = 'ezyConnectorKeepAlive';
+
 let status: ConnectionStatus = 'disconnected';
 
 const client = new EzyWebSocketClient(
@@ -92,7 +94,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return false;
 });
 
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === KEEP_ALIVE_ALARM && (status === 'disconnected' || status === 'error')) {
+    start();
+  }
+});
+
 chrome.runtime.onStartup.addListener(start);
 chrome.runtime.onInstalled.addListener(start);
 
+chrome.alarms.create(KEEP_ALIVE_ALARM, { periodInMinutes: 1 });
 start();
