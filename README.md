@@ -17,6 +17,15 @@ Xem chi tiết kiến trúc, giao thức message và danh sách command tại [F
 
 Khi có bản mới, lặp lại các bước trên với file `.zip` mới để cập nhật.
 
+> **Lưu ý trên Windows:** Windows không cho ghi đè file đang được dùng, nên nếu giải nén đè
+> lên thư mục cũ mà báo lỗi "file đang được sử dụng", hãy làm một trong các cách sau:
+>
+> - Vào `chrome://extensions`, bấm "Remove" (gỡ) extension cũ (hoặc tắt công tắc của nó),
+>   rồi mới giải nén đè, sau đó "Load unpacked" lại.
+> - Hoặc đóng hẳn Chrome (kể cả các tiến trình chạy nền ở khay hệ thống) rồi giải nén đè.
+> - Hoặc giải nén bản mới vào một thư mục khác (ví dụ `ezy-connector-0.0.2`), gỡ extension
+>   cũ rồi "Load unpacked" thư mục mới.
+
 ## Build từ source (chỉ cần khi muốn tự sửa code)
 
 ```bash
