@@ -59,3 +59,13 @@ thư mục giải nén từ Releases.
 4. Tải file `release/ezy-connector-0.0.1.zip` lên Chrome Web Store và/hoặc đính kèm vào
    GitHub Releases. Thư mục `release/` đã được Git bỏ qua. Khi phát hành phiên bản mới, thay
    `0.0.1` trong tên file bằng version tương ứng.
+
+## Đóng góp (Contributing)
+
+Repo này quét bí mật (token, mật khẩu, khóa...) trước mỗi commit và trên mọi lần push/PR bằng
+[gitleaks](https://github.com/gitleaks/gitleaks). Sau khi clone, bật kiểm tra ở máy local:
+
+```bash
+git config core.hooksPath .githooks
+brew install gitleaks
+```

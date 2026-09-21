@@ -1,0 +1,4 @@
+title = "ezy-connector gitleaks config"
+
+[extend]
+useDefault = true
