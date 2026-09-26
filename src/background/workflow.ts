@@ -212,6 +212,51 @@ for (const action of ['wait', 'click', 'fill', 'keypress', 'assertTextAbsent']) 
   handlers.set(`dom.${action}`, (args) => runDom(args, action));
 }
 
+interface WaitCondition { selector: string; text: string; errorMessage: string }
+
+handlers.set('dom.waitAny', async (args) => {
+  if (!Array.isArray(args.conditions) || !args.conditions.length) {
+    throw new Error('conditions must be a non-empty array');
+  }
+  const conditions: WaitCondition[] = args.conditions.map((condition, index) => {
+    const values = (condition && typeof condition === 'object' ? condition : {}) as Values;
+    if (typeof values.selector !== 'string' || !values.selector) {
+      throw new Error(`conditions[${index}].selector is required`);
+    }
+    return {
+      selector: values.selector,
+      text: typeof values.text === 'string' ? values.text : '',
+      errorMessage: typeof values.errorMessage === 'string' ? values.errorMessage : '',
+    };
+  });
+  const timeoutMs = Math.max(0, Math.min(Number(args.timeoutMs) || 5000, 60000));
+  const [{ result }] = await chrome.scripting.executeScript({
+    target: { tabId: requiredTabId(args) },
+    world: 'MAIN',
+    func: async (waitConditions, timeout) => {
+      const deadline = Date.now() + timeout;
+      do {
+        for (let index = 0; index < waitConditions.length; ++index) {
+          const condition = waitConditions[index];
+          const matched = Array.from(document.querySelectorAll(condition.selector)).some(
+            (element) => !condition.text
+              || (element instanceof HTMLElement && element.innerText.includes(condition.text)),
+          );
+          if (!matched) continue;
+          if (condition.errorMessage) throw new Error(condition.errorMessage);
+          return { matchedIndex: index };
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } while (Date.now() < deadline);
+      throw new Error(`Timed out waiting for conditions: ${
+        waitConditions.map((condition) => condition.selector).join(', ')
+      }`);
+    },
+    args: [conditions, timeoutMs],
+  });
+  return result;
+});
+
 handlers.set('dom.uploadRemoteFiles', async (args) => {
   const urls = args.urls;
   if (!Array.isArray(urls) || urls.some((url) => typeof url !== 'string')) {
