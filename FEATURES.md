@@ -52,11 +52,12 @@ hoặc khi lỗi:
 ```
 
 Các command hiện có: `tab.ensure`, `tab.create`, `tab.update`, `tab.reload`, `tab.remove`,
-`dom.wait`, `dom.click`, `dom.fill`, `dom.keypress`, `dom.uploadRemoteFiles` và `delay`.
+`dom.wait`, `dom.click`, `dom.fill`, `dom.keypress`, `dom.assertTextAbsent`, `dom.uploadRemoteFiles` và `delay`.
 Kết quả có thể lưu bằng `saveAs` rồi tham chiếu ở command sau theo cú pháp `${name.field}`.
 Command `delay` nhận một `durationMs` cố định hoặc khoảng `minDurationMs`/`maxDurationMs`.
 Nên truyền `tabId` để timer chạy trong tab, tránh timer service worker bị Chrome trì hoãn.
 `dom.fill` hỗ trợ khoảng delay trước khi gõ và giữa từng ký tự.
+`dom.assertTextAbsent` báo lỗi (dùng `errorMessage` nếu có) khi phần tử `selector` chứa đoạn `text`, dùng để dừng workflow sớm.
 
 ## Logging
 

@@ -184,6 +184,14 @@ async function runDom(args: Values, action: string): Promise<unknown> {
         element.focus();
         return { filled: true };
       }
+      if (operation === 'assertTextAbsent') {
+        const text = String(values.text ?? '');
+        if (!text) throw new Error('text is required');
+        if (element.innerText.includes(text)) {
+          throw new Error(String(values.errorMessage || `Text is present: ${text}`));
+        }
+        return { absent: true };
+      }
       if (operation === 'keypress') {
         element.focus();
         const key = String(values.key ?? 'Enter');
@@ -200,7 +208,7 @@ async function runDom(args: Values, action: string): Promise<unknown> {
   return result;
 }
 
-for (const action of ['wait', 'click', 'fill', 'keypress']) {
+for (const action of ['wait', 'click', 'fill', 'keypress', 'assertTextAbsent']) {
   handlers.set(`dom.${action}`, (args) => runDom(args, action));
 }
 
@@ -368,7 +376,7 @@ function summarizeArgs(command: string, args: Values): Values {
   for (const key of [
     'tabId', 'url', 'urlPattern', 'selector', 'triggerSelector', 'timeoutMs',
     'durationMs', 'minDurationMs', 'maxDurationMs', 'minBeforeTypeDelayMs',
-    'maxBeforeTypeDelayMs', 'minCharacterDelayMs', 'maxCharacterDelayMs', 'key',
+    'maxBeforeTypeDelayMs', 'minCharacterDelayMs', 'maxCharacterDelayMs', 'key', 'text',
   ]) {
     if (args[key] !== undefined) summary[key] = args[key];
   }
