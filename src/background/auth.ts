@@ -1,5 +1,4 @@
 const COOKIE_NAME_ADMIN_ACCESS_TOKEN = 'adminAccessToken';
-const SETTING_NAME_WEBSOCKET_URL = 'websocket_url';
 
 function normalizeBaseUrl(adminUrl: string): string {
   const url = new URL(adminUrl.trim());
@@ -42,20 +41,16 @@ export async function loginAdmin(
 
 export async function fetchWebsocketUrl(adminUrl: string, token: string): Promise<string> {
   const base = normalizeBaseUrl(adminUrl);
-  const response = await fetch(
-    `${base}/api/v1/settings/names/${SETTING_NAME_WEBSOCKET_URL}`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-    },
-  );
+  const response = await fetch(`${base}/api/v1/settings/websocket-url`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   if (response.status === 401) {
     throw new Error('Token đã hết hạn, vui lòng đăng nhập lại');
   }
   if (!response.ok) {
     throw new Error(`Không lấy được websocket url (HTTP ${response.status})`);
   }
-  const data = await response.json();
-  const wsUrl = data?.value;
+  const wsUrl = (await response.text()).trim();
   if (!wsUrl) {
     throw new Error('Server chưa cấu hình websocket_url');
   }
