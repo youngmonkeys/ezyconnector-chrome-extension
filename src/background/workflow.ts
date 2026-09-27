@@ -261,32 +261,63 @@ handlers.set('dom.waitAny', async (args) => {
     };
   });
   const timeoutMs = Math.max(0, Math.min(Number(args.timeoutMs) || 5000, 60000));
+  const minWaitMs = Math.max(0, Math.min(Number(args.minWaitMs) || 0, timeoutMs));
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId: requiredTabId(args) },
     world: 'MAIN',
-    func: async (waitConditions, timeout) => {
+    func: async (waitConditions, timeout, minWait) => {
       const normalize = (value: string): string => value.normalize('NFC').replace(/\s+/g, ' ').trim();
-      const deadline = Date.now() + timeout;
+      const startedAt = Date.now();
+      const deadline = startedAt + timeout;
+      const trace: Array<{ elapsedMs: number; states: string[] }> = [];
+      let lastSignature = '';
       do {
+        const elapsedMs = Date.now() - startedAt;
+        const states = waitConditions.map((condition) => {
+          const elements = Array.from(document.querySelectorAll(condition.selector));
+          const matchedElements = elements.filter((element) => !condition.text
+            || (element instanceof HTMLElement
+              && normalize(element.innerText).includes(normalize(condition.text))));
+          const firstText = matchedElements[0] instanceof HTMLElement
+            ? normalize(matchedElements[0].innerText).slice(0, 80)
+            : '';
+          return { matched: matchedElements.length > 0, summary: condition.text
+            ? `matched=${matchedElements.length > 0}`
+            : `count=${matchedElements.length} first="${firstText}"` };
+        });
+        const signature = states.map((state) => state.summary).join(' | ');
+        if (signature !== lastSignature) {
+          trace.push({ elapsedMs, states: states.map((state) => state.summary) });
+          lastSignature = signature;
+        }
         for (let index = 0; index < waitConditions.length; ++index) {
-          const condition = waitConditions[index];
-          const matched = Array.from(document.querySelectorAll(condition.selector)).some(
-            (element) => !condition.text || (element instanceof HTMLElement
-              && normalize(element.innerText).includes(normalize(condition.text))),
-          );
-          if (!matched) continue;
-          if (condition.errorMessage) throw new Error(condition.errorMessage);
-          return { matchedIndex: index };
+          if (!states[index].matched) continue;
+          if (waitConditions[index].errorMessage) {
+            return { matchedIndex: index, elapsedMs, error: waitConditions[index].errorMessage, trace };
+          }
+          if (elapsedMs >= minWait) return { matchedIndex: index, elapsedMs, error: '', trace };
         }
         await new Promise((resolve) => setTimeout(resolve, 100));
       } while (Date.now() < deadline);
-      throw new Error(`Timed out waiting for conditions: ${
-        waitConditions.map((condition) => condition.selector).join(', ')
-      }`);
+      return {
+        matchedIndex: -1,
+        elapsedMs: Date.now() - startedAt,
+        error: `Timed out waiting for conditions: ${
+          waitConditions.map((condition) => condition.selector).join(', ')
+        }`,
+        trace,
+      };
     },
-    args: [conditions, timeoutMs],
+    args: [conditions, timeoutMs, minWaitMs],
   });
-  return result;
+  console.info(LOG_PREFIX, 'waitAny checked', {
+    matchedIndex: result.matchedIndex,
+    elapsedMs: result.elapsedMs,
+    error: result.error,
+    trace: JSON.stringify(result.trace, null, 2),
+  });
+  if (result.error) throw new Error(result.error);
+  return { matchedIndex: result.matchedIndex };
 });
 
 handlers.set('dom.uploadRemoteFiles', async (args) => {
@@ -453,7 +484,7 @@ function summarizeArgs(command: string, args: Values): Values {
   for (const key of [
     'tabId', 'url', 'urlPattern', 'selector', 'triggerSelector', 'timeoutMs',
     'durationMs', 'minDurationMs', 'maxDurationMs', 'minBeforeTypeDelayMs',
-    'maxBeforeTypeDelayMs', 'minCharacterDelayMs', 'maxCharacterDelayMs', 'key', 'text',
+    'maxBeforeTypeDelayMs', 'minCharacterDelayMs', 'maxCharacterDelayMs', 'key', 'text', 'minWaitMs',
   ]) {
     if (args[key] !== undefined) summary[key] = args[key];
   }
