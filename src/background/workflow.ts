@@ -184,14 +184,6 @@ async function runDom(args: Values, action: string): Promise<unknown> {
         element.focus();
         return { filled: true };
       }
-      if (operation === 'assertTextAbsent') {
-        const text = String(values.text ?? '');
-        if (!text) throw new Error('text is required');
-        if (element.innerText.includes(text)) {
-          throw new Error(String(values.errorMessage || `Text is present: ${text}`));
-        }
-        return { absent: true };
-      }
       if (operation === 'keypress') {
         element.focus();
         const key = String(values.key ?? 'Enter');
@@ -208,9 +200,48 @@ async function runDom(args: Values, action: string): Promise<unknown> {
   return result;
 }
 
-for (const action of ['wait', 'click', 'fill', 'keypress', 'assertTextAbsent']) {
+for (const action of ['wait', 'click', 'fill', 'keypress']) {
   handlers.set(`dom.${action}`, (args) => runDom(args, action));
 }
+
+handlers.set('dom.assertTextAbsent', async (args) => {
+  const selector = requiredString(args, 'selector');
+  const text = requiredString(args, 'text');
+  const [{ result }] = await chrome.scripting.executeScript({
+    target: { tabId: requiredTabId(args) },
+    world: 'MAIN',
+    func: (cssSelector, expectedText) => {
+      const normalize = (value: string): string => value.normalize('NFC').replace(/\s+/g, ' ').trim();
+      const normalizedText = normalize(expectedText);
+      const elements = Array.from(document.querySelectorAll(cssSelector));
+      const innerText = normalize(elements.map((element) => (
+        element instanceof HTMLElement ? element.innerText : ''
+      )).join(' '));
+      const textContent = normalize(elements.map((element) => element.textContent ?? '').join(' '));
+      const probe = normalizedText.slice(0, 12);
+      const probeIndex = textContent.indexOf(probe);
+      return {
+        elementCount: elements.length,
+        iframeCount: document.querySelectorAll('iframe').length,
+        innerTextLength: innerText.length,
+        foundInInnerText: innerText.includes(normalizedText),
+        foundInTextContent: textContent.includes(normalizedText),
+        probe,
+        probeSnippet: probeIndex >= 0
+          ? textContent.slice(Math.max(0, probeIndex - 40), probeIndex + normalizedText.length + 40)
+          : '',
+      };
+    },
+    args: [selector, text],
+  });
+  console.info(LOG_PREFIX, 'assertTextAbsent checked', { selector, text, ...result });
+  if (result.foundInInnerText) {
+    throw new Error(typeof args.errorMessage === 'string' && args.errorMessage
+      ? args.errorMessage
+      : `Text is present: ${text}`);
+  }
+  return { absent: true };
+});
 
 interface WaitCondition { selector: string; text: string; errorMessage: string }
 
@@ -234,13 +265,14 @@ handlers.set('dom.waitAny', async (args) => {
     target: { tabId: requiredTabId(args) },
     world: 'MAIN',
     func: async (waitConditions, timeout) => {
+      const normalize = (value: string): string => value.normalize('NFC').replace(/\s+/g, ' ').trim();
       const deadline = Date.now() + timeout;
       do {
         for (let index = 0; index < waitConditions.length; ++index) {
           const condition = waitConditions[index];
           const matched = Array.from(document.querySelectorAll(condition.selector)).some(
-            (element) => !condition.text
-              || (element instanceof HTMLElement && element.innerText.includes(condition.text)),
+            (element) => !condition.text || (element instanceof HTMLElement
+              && normalize(element.innerText).includes(normalize(condition.text))),
           );
           if (!matched) continue;
           if (condition.errorMessage) throw new Error(condition.errorMessage);
