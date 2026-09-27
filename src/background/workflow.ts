@@ -261,16 +261,21 @@ handlers.set('dom.waitAny', async (args) => {
     };
   });
   const timeoutMs = Math.max(0, Math.min(Number(args.timeoutMs) || 5000, 60000));
-  const minWaitMs = Math.max(0, Math.min(Number(args.minWaitMs) || 0, timeoutMs));
+  const waitForChangeMs = Math.max(0, Math.min(Number(args.waitForChangeMs) || 0, timeoutMs));
+  const stableMs = Math.max(0, Math.min(Number(args.stableMs) || 0, timeoutMs));
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId: requiredTabId(args) },
     world: 'MAIN',
-    func: async (waitConditions, timeout, minWait) => {
+    func: async (waitConditions, timeout, waitForChange, stable) => {
       const normalize = (value: string): string => value.normalize('NFC').replace(/\s+/g, ' ').trim();
       const startedAt = Date.now();
       const deadline = startedAt + timeout;
-      const trace: Array<{ elapsedMs: number; states: string[] }> = [];
+      const trace: Array<{ elapsedMs: number; checkMs: number; activeValue: string; states: string[] }> = [];
       let lastSignature = '';
+      let initialStateSignature: string | null = null;
+      let changed = false;
+      let lastStateSignature = '';
+      let stableSince = startedAt;
       do {
         const elapsedMs = Date.now() - startedAt;
         const states = waitConditions.map((condition) => {
@@ -285,17 +290,35 @@ handlers.set('dom.waitAny', async (args) => {
             ? `matched=${matchedElements.length > 0}`
             : `count=${matchedElements.length} first="${firstText}"` };
         });
-        const signature = states.map((state) => state.summary).join(' | ');
+        const activeElement = document.activeElement;
+        const activeValue = activeElement instanceof HTMLInputElement
+          || activeElement instanceof HTMLTextAreaElement ? activeElement.value : '';
+        const signature = `${activeValue} | ${states.map((state) => state.summary).join(' | ')}`;
         if (signature !== lastSignature) {
-          trace.push({ elapsedMs, states: states.map((state) => state.summary) });
+          trace.push({
+            elapsedMs,
+            checkMs: Date.now() - startedAt - elapsedMs,
+            activeValue,
+            states: states.map((state) => state.summary),
+          });
           lastSignature = signature;
         }
-        for (let index = 0; index < waitConditions.length; ++index) {
+        const stateSignature = states.map((state) => state.summary).join(' | ');
+        if (initialStateSignature === null) initialStateSignature = stateSignature;
+        if (stateSignature !== initialStateSignature) changed = true;
+        if (stateSignature !== lastStateSignature) {
+          lastStateSignature = stateSignature;
+          stableSince = Date.now();
+        }
+        const ready = (changed || elapsedMs >= waitForChange) && Date.now() - stableSince >= stable;
+        for (let index = 0; ready && index < waitConditions.length; ++index) {
           if (!states[index].matched) continue;
-          if (waitConditions[index].errorMessage) {
-            return { matchedIndex: index, elapsedMs, error: waitConditions[index].errorMessage, trace };
-          }
-          if (elapsedMs >= minWait) return { matchedIndex: index, elapsedMs, error: '', trace };
+          return {
+            matchedIndex: index,
+            elapsedMs,
+            error: waitConditions[index].errorMessage,
+            trace,
+          };
         }
         await new Promise((resolve) => setTimeout(resolve, 100));
       } while (Date.now() < deadline);
@@ -308,14 +331,16 @@ handlers.set('dom.waitAny', async (args) => {
         trace,
       };
     },
-    args: [conditions, timeoutMs, minWaitMs],
+    args: [conditions, timeoutMs, waitForChangeMs, stableMs],
   });
-  console.info(LOG_PREFIX, 'waitAny checked', {
-    matchedIndex: result.matchedIndex,
-    elapsedMs: result.elapsedMs,
-    error: result.error,
-    trace: JSON.stringify(result.trace, null, 2),
-  });
+  console.info(
+    `${LOG_PREFIX} waitAny checked matchedIndex=${result.matchedIndex}`
+      + ` elapsedMs=${result.elapsedMs} error=${result.error || '-'}`,
+  );
+  result.trace.forEach((entry) => console.info(
+    `${LOG_PREFIX} waitAny trace at=${entry.elapsedMs}ms checkMs=${entry.checkMs}`
+      + ` activeValue="${entry.activeValue}" ${entry.states.join(' | ')}`,
+  ));
   if (result.error) throw new Error(result.error);
   return { matchedIndex: result.matchedIndex };
 });
@@ -484,7 +509,7 @@ function summarizeArgs(command: string, args: Values): Values {
   for (const key of [
     'tabId', 'url', 'urlPattern', 'selector', 'triggerSelector', 'timeoutMs',
     'durationMs', 'minDurationMs', 'maxDurationMs', 'minBeforeTypeDelayMs',
-    'maxBeforeTypeDelayMs', 'minCharacterDelayMs', 'maxCharacterDelayMs', 'key', 'text', 'minWaitMs',
+    'maxBeforeTypeDelayMs', 'minCharacterDelayMs', 'maxCharacterDelayMs', 'key', 'text', 'waitForChangeMs', 'stableMs',
   ]) {
     if (args[key] !== undefined) summary[key] = args[key];
   }
