@@ -8,7 +8,7 @@ Xem chi tiết kiến trúc, giao thức message và danh sách command tại [F
 ## Cài đặt (dùng ngay, không cần cài công cụ lập trình)
 
 1. Vào trang [Releases](https://github.com/youngmonkeys/ezyconnector-chrome-extension/releases)
-   và tải file `.zip` của bản mới nhất (ví dụ `ezy-connector-0.0.1.zip`).
+   và tải file `.zip` của bản mới nhất (ví dụ `ezy-connector-0.0.2.zip`).
 2. Giải nén file `.zip` vừa tải ra một thư mục bất kỳ.
 3. Mở `chrome://extensions`, bật "Developer mode" (góc trên bên phải).
 4. Bấm "Load unpacked" → chọn thư mục vừa giải nén (thư mục chứa file `manifest.json`).
@@ -52,13 +52,13 @@ thư mục giải nén từ Releases.
    ```bash
    mkdir -p release
    cd dist
-   zip -r ../release/ezy-connector-0.0.1.zip . -x '*.map'
+   zip -r ../release/ezy-connector-0.0.2.zip . -x '*.map'
    cd ..
    ```
 
-4. Tải file `release/ezy-connector-0.0.1.zip` lên Chrome Web Store và/hoặc đính kèm vào
+4. Tải file `release/ezy-connector-0.0.2.zip` lên Chrome Web Store và/hoặc đính kèm vào
    GitHub Releases. Thư mục `release/` đã được Git bỏ qua. Khi phát hành phiên bản mới, thay
-   `0.0.1` trong tên file bằng version tương ứng.
+   `0.0.2` trong tên file bằng version tương ứng.
 
 ## Đóng góp (Contributing)
 
